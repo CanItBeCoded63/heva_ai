@@ -1,0 +1,127 @@
+[
+  {
+    "id": "doc_dist_01",
+    "title": "Raft Consensus Algorithm Specification",
+    "text": "The Raft consensus algorithm decomposes consensus into leader election, log replication, and safety. A Raft cluster typically consists of 5 servers, allowing the system to tolerate 2 failures. When a leader fails, a follower transitions to candidate state after an election timeout (typically randomized between 150ms and 300ms) and requests votes from other nodes. To be elected leader, a candidate must receive votes from a majority of servers in the cluster."
+  },
+  {
+    "id": "doc_dist_02",
+    "title": "Vector Clocks and Causality",
+    "text": "Vector clocks provide partial ordering of events in distributed systems and detect causal violations without a centralized clock. A vector clock for a system of N processes is an array of N integers. When process i experiences an internal event, it increments its own component V[i]. When sending a message, the process attaches its current vector clock. Upon receiving a message with clock W, the receiving process updates its clock: V[k] = max(V[k], W[k]) for all k, and increments V[i]."
+  },
+  {
+    "id": "doc_dist_03",
+    "title": "CAP Theorem Principles",
+    "text": "Formulated by Eric Brewer and proved by Gilbert and Lynch, the CAP theorem states that any distributed data store can guarantee at most two out of three properties: Consistency (every read receives the most recent write or an error), Availability (every request receives a non-error response without guarantee it contains the most recent write), and Partition tolerance (the system continues to operate despite arbitrary message loss or network partition)."
+  },
+  {
+    "id": "doc_dist_04",
+    "title": "Two-Phase Commit Protocol",
+    "text": "The Two-Phase Commit (2PC) protocol is an atomic commitment protocol. In Phase 1 (Prepare), the coordinator asks all cohort participants if they can commit. Each participant writes undo/redo logs and responds with VOTE_COMMIT or VOTE_ABORT. In Phase 2 (Commit), if all participants voted commit, the coordinator broadcasts GLOBAL_COMMIT; otherwise, if any participant voted abort or timed out, it broadcasts GLOBAL_ABORT. 2PC is a blocking protocol if the coordinator fails during phase 2."
+  },
+  {
+    "id": "doc_dist_05",
+    "title": "Gossip Protocol and Epidemic Dissemination",
+    "text": "Gossip protocols are decentralized communication algorithms where nodes periodically select b peers at random and exchange state information. Information spreads with logarithmic latency O(log N) where N is the cluster size. Anti-entropy protocols compare entire datasets using Merkle trees, whereas rumor mongering protocols periodically transmit recently observed state updates until an update has been transmitted a fixed number of times."
+  },
+  {
+    "id": "doc_cloud_01",
+    "title": "High Availability and RTO/RPO Metrics",
+    "text": "Recovery Time Objective (RTO) is the maximum acceptable duration of downtime following a disaster before service must be restored. Recovery Point Objective (RPO) is the maximum acceptable period of data loss measured in time. An architecture requiring 99.99% availability permits a maximum of 52.6 minutes of downtime per calendar year. Hot-standby configurations achieve near-zero RTO, whereas warm-standby requires spinning up standby instances upon failover."
+  },
+  {
+    "id": "doc_cloud_02",
+    "title": "Cloud Object Storage Immutability and Tiering",
+    "text": "Cloud object storage implements Write-Once-Read-Many (WORM) storage via object lock policies with compliance or governance retention modes. In compliance mode, protected object versions cannot be overwritten or deleted by any user, including the root account, until the retention period expires. Standard tier provides millisecond retrieval latency, whereas deep archive tiers require retrieval times between 3 and 12 hours."
+  },
+  {
+    "id": "doc_cloud_03",
+    "title": "Circuit Breaker Pattern in Microservices",
+    "text": "The Circuit Breaker pattern prevents cascading failures across distributed microservices. A circuit breaker has three states: Closed (requests flow normally; failure counter tracked), Open (requests immediately fail without contacting the remote service when failure threshold is breached), and Half-Open (after a cooldown duration, a limited number of trial requests are allowed through to probe service health; if successful, it resets to Closed)."
+  },
+  {
+    "id": "doc_cloud_04",
+    "title": "API Gateway Rate Limiting and Token Bucket",
+    "text": "Token bucket algorithms regulate traffic bursts at the API gateway layer. Tokens are added to a bucket of capacity B at a constant refill rate r per second. When an incoming request arrives, it consumes k tokens. If fewer than k tokens remain, the request is rejected with HTTP 429 Too Many Requests. This allows bursts up to capacity B while enforcing a strict long-term average rate of r."
+  },
+  {
+    "id": "doc_cloud_05",
+    "title": "Zero Trust Architecture Standards",
+    "text": "NIST Special Publication 800-207 defines Zero Trust Architecture (ZTA) based on seven core tenets. ZTA assumes no implicit trust granted to assets based solely on physical or network location. All communications must be authenticated and authorized dynamically per session using multi-factor authentication, cryptographic mutual TLS (mTLS), and continuous context-aware risk evaluation."
+  },
+  {
+    "id": "doc_aero_01",
+    "title": "Hohmann Orbital Transfer Maneuver",
+    "text": "A Hohmann transfer orbit is an elliptical orbital trajectory used to transfer a spacecraft between two circular coplanar orbits of different radii around a central body. It uses two impulsive engine burns: delta-v1 accelerates the spacecraft from the initial circular orbit into the elliptical transfer orbit at periapsis, and delta-v2 accelerates the spacecraft at apoapsis to circularize the orbit at the target radius. It is mathematically the most energy-efficient two-impulse transfer."
+  },
+  {
+    "id": "doc_aero_02",
+    "title": "Lagrange Points in Orbital Mechanics",
+    "text": "In a three-body orbital system, there are five equilibrium points known as Lagrange points (L1 through L5). L1, L2, and L3 lie along the line connecting the two primary masses and are unstable equilibria requiring station-keeping propulsion. L4 and L5 form equilateral triangles with the two primaries and are stable if the mass ratio of the primaries exceeds 24.96. The James Webb Space Telescope operates in a halo orbit around Earth-Sun L2."
+  },
+  {
+    "id": "doc_aero_03",
+    "title": "Rocket Equation and Specific Impulse",
+    "text": "The Tsiolkovsky rocket equation states that delta-v = v_e * ln(m_0 / m_f), where v_e is effective exhaust velocity, m_0 is initial wet mass, and m_f is final dry mass. Specific impulse (I_sp) measures engine propellant efficiency in seconds, related to exhaust velocity by v_e = I_sp * g_0, where g_0 is standard gravity (9.80665 m/s^2). Hydrolox engines achieve high I_sp (approximately 450s in vacuum) compared to RP-1/LOX (approx 310s sea level)."
+  },
+  {
+    "id": "doc_aero_04",
+    "title": "Atmospheric Re-entry Aerodynamics",
+    "text": "During hypersonic atmospheric entry at speeds exceeding Mach 25, kinetic energy is dissipated primarily through shock wave compression of ambient atmospheric gas rather than surface friction. A blunt body design creates a detached bow shock wave that radiates a significant fraction of shock heating away from the vehicle hull, allowing ablation shields or thermal protection tiles to absorb the remaining heat flux."
+  },
+  {
+    "id": "doc_aero_05",
+    "title": "Kepler's Laws of Planetary Motion",
+    "text": "Johannes Kepler published three laws of planetary motion: First Law: The orbit of a planet is an ellipse with the Sun at one of the two foci. Second Law: A line segment joining a planet and the Sun sweeps out equal areas during equal intervals of time (conservation of angular momentum). Third Law: The square of the orbital period T is directly proportional to the cube of the semi-major axis a (T^2 proportional to a^3)."
+  },
+  {
+    "id": "doc_pharm_01",
+    "title": "Clinical Trial Phase Classifications",
+    "text": "Clinical drug trials progress through four regulated phases: Phase 1 evaluates safety, tolerability, and pharmacokinetics in 20 to 100 healthy volunteers. Phase 2 assesses therapeutic efficacy and dosing in 100 to 300 patients with the target disease. Phase 3 compares the investigational drug to standard-of-care or placebo in 1,000 to 3,000 randomized patients across multiple centers. Phase 4 constitutes post-marketing pharmacovigilance surveillance."
+  },
+  {
+    "id": "doc_pharm_02",
+    "title": "Pharmacokinetic Elimination Half-Life",
+    "text": "Elimination half-life (t_1/2) is the time required for plasma drug concentration to decrease by 50%. Under first-order elimination kinetics, approximately 97% of the drug is eliminated after five half-lives (t_1/2 * 5). Steady-state concentration during repeated continuous dosing is likewise attained after 4 to 5 elimination half-lives, independent of the dose amount."
+  },
+  {
+    "id": "doc_pharm_03",
+    "title": "Monoclonal Antibody Therapeutic Mechanisms",
+    "text": "Monoclonal antibodies (mAbs) are laboratory-produced immunoglobulin molecules that bind specific antigen epitopes. Mechanisms of action include neutralization (blocking ligand-receptor binding), Antibody-Dependent Cellular Cytotoxicity (ADCC) mediated by natural killer cells via Fc receptor binding, and Complement-Dependent Cytotoxicity (CDC) initiated by C1q complex binding to trigger the membrane attack complex."
+  },
+  {
+    "id": "doc_pharm_04",
+    "title": "Double-Blind Placebo-Controlled Study Design",
+    "text": "A double-blind randomized placebo-controlled trial (DBRPCT) is the gold standard for clinical efficacy. Neither the clinical trial participants nor the administering investigators know whether a participant receives the active therapeutic agent or an inert matching placebo. Randomization codes are sealed until database lock to eliminate observer bias and placebo effect confounding."
+  },
+  {
+    "id": "doc_pharm_05",
+    "title": "Therapeutic Index and Drug Safety Margin",
+    "text": "Therapeutic Index (TI) quantifies drug safety margin, defined as the ratio of median toxic dose (TD_50) to median effective dose (ED_50): TI = TD_50 / ED_50. Drugs with narrow therapeutic indices (e.g., warfarin, lithium, digoxin) require therapeutic drug monitoring (TDM) because small dosage increments can precipitate severe clinical toxicity."
+  },
+  {
+    "id": "doc_algo_01",
+    "title": "The Master Theorem for Divide-and-Conquer Recurrences",
+    "text": "The Master Theorem solves recurrences of the form T(n) = a*T(n/b) + f(n) where a >= 1 and b > 1. Let c_crit = log_b(a). Case 1: If f(n) = O(n^c) where c < c_crit, then T(n) = Theta(n^c_crit). Case 2: If f(n) = Theta(n^c_crit * log^k(n)) with k >= 0, then T(n) = Theta(n^c_crit * log^(k+1)(n)). Case 3: If f(n) = Omega(n^c) with c > c_crit and regularity condition holds, then T(n) = Theta(f(n))."
+  },
+  {
+    "id": "doc_algo_02",
+    "title": "Dijkstra's Algorithm and Priority Queue Optimization",
+    "text": "Dijkstra's algorithm finds the shortest path from a source vertex to all other vertices in a directed graph with non-negative edge weights. Using a naive array, time complexity is O(V^2). When implemented with a binary min-heap priority queue, complexity improves to O((V + E) log V). With a Fibonacci heap, amortized time complexity achieves O(E + V log V). Negative edge weights are not supported and require the Bellman-Ford algorithm."
+  },
+  {
+    "id": "doc_algo_03",
+    "title": "Complexity Classes P, NP, and NP-Complete",
+    "text": "Class P contains decision problems solvable by a deterministic Turing machine in polynomial time. Class NP contains problems whose candidate solutions can be verified in polynomial time. A problem is NP-hard if every problem in NP can be polynomial-time reduced to it. A problem is NP-complete if it is both in NP and NP-hard. Stephen Cook and Leonid Levin proved in 1971 that Boolean Satisfiability (SAT) is NP-complete."
+  },
+  {
+    "id": "doc_algo_04",
+    "title": "B-Tree Indexing and Disk I/O Efficiency",
+    "text": "A B-tree is a self-balancing search tree designed to optimize block-oriented disk storage. Every node except root contains between t-1 and 2t-1 keys and between t and 2t child pointers, where t is the minimum degree. The height of a B-tree storing n keys is bounded by O(log_t n). By selecting t such that a node fits exactly within a disk block page (typically 4KB to 16KB), disk I/O operations are minimized."
+  },
+  {
+    "id": "doc_algo_05",
+    "title": "Bloom Filter Probabilistic Data Structure",
+    "text": "A Bloom filter is a space-efficient probabilistic data structure used to test set membership. An empty Bloom filter is a bit array of m bits, all initialized to 0, paired with k independent uniform hash functions. When querying an element, if any of the k hashed bit positions is 0, the element is definitively NOT in the set (zero false negatives). If all k bits are 1, the element is probably in the set, with a tunable false positive probability p approximately equal to (1 - e^(-kn/m))^k."
+  }
+]
