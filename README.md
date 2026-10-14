@@ -170,14 +170,15 @@ Provides both macro-level unsupervised clustering and a granular 8-archetype beh
   - *Cluster 2:* Context Distractor Hijacking & Attention Dispersion
   - *Cluster 3:* Negative Constraint Blindness & Schema Violation
 - **Micro Taxonomy (8 Behavioral Archetypes):** Granularly classifies failures into:
-  1. `sycophantic_presupposition_acceptance` (51 cases)
-  2. `context_distractor_hijacking` (30 cases)
-  3. `negative_constraint_leakage` (30 cases)
-  4. `overconfident_wrong` (25 cases)
-  5. `temporal_precedence_blindness` (0 cases)
-  6. `citation_fabrication` (10 cases)
-  7. `adversarial_robustness_gap` (25 cases)
-  8. `multi_fact_entailment_scoring_gap` *(Harness Artifact disclosure)*
+  1. `sycophantic_presupposition_acceptance` — Sycophantic acceptance of false presuppositions
+  2. `context_distractor_hijacking` — Context distractor hijacking & attention dispersion
+  3. `negative_constraint_leakage` — Negative constraint blindness & schema violation
+  4. `overconfident_wrong` — Overconfident erroneous assertion
+  5. `temporal_precedence_blindness` — Temporal precedence & version blindness
+  6. `citation_fabrication` — Citation & entity fabrication
+  7. `adversarial_robustness_gap` — Adversarial robustness & paraphrase gap
+  8. `multi_fact_entailment_scoring_gap` *(Harness Artifact disclosure)* — Multi-fact entailment scoring boundary
+- Exact counts per run are dynamic; see `EVALUATION_REPORT.md` and `data/baseline_results.json` for current run distributions.
 - Formulates cognitive root-cause diagnoses and actionable system improvement proposals for each archetype.
 
 ### Module E: Deterministic Regression Runner (`evaluation/runner.py`)
