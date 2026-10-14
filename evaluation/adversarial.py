@@ -12,7 +12,7 @@ import os
 import re
 import json
 import random
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 DISTRACTORS = [
     "Note on Apache Cassandra: Unlike Raft, Apache Cassandra utilizes a peer-to-peer gossip protocol with tunable consistency levels (ONE, QUORUM, ALL) and employs Hinted Handoff to tolerate transient node outages. In 2018, Cassandra 3.11 was benchmarked across 100 clusters.",
@@ -35,9 +35,47 @@ class AdversarialGenerator:
     Offline mutation pipeline generating the 4 adversarial suites.
     """
 
-    def __init__(self, seed: int = 42):
+    def __init__(self, seed: int = 42, hand_authored_dir: Optional[str] = None):
         self.seed = seed
         self.rng = random.Random(seed)
+        self.hand_authored_dir = hand_authored_dir
+        self.hand_authored_cases = self._load_hand_authored_cases(hand_authored_dir)
+
+    def _load_hand_authored_cases(self, hand_authored_dir: Optional[str]) -> Dict[str, Dict[int, Dict[str, Any]]]:
+        """
+        Loads reviewer-authored adversarial JSONL overrides when present. The
+        generator still falls back to deterministic mutations for cases without
+        a hand-authored record.
+        """
+        if not hand_authored_dir or not os.path.isdir(hand_authored_dir):
+            return {}
+
+        loaded: Dict[str, Dict[int, Dict[str, Any]]] = {}
+        for filename in os.listdir(hand_authored_dir):
+            if not filename.endswith(".jsonl"):
+                continue
+            suite_name = os.path.splitext(filename)[0]
+            loaded[suite_name] = {}
+            path = os.path.join(hand_authored_dir, filename)
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    record = json.loads(line)
+                    loaded[suite_name][int(record["id"])] = record
+        return loaded
+
+    def _apply_hand_authored(self, suite_name: str, case: Dict[str, Any], generated: Dict[str, Any]) -> Dict[str, Any]:
+        authored = self.hand_authored_cases.get(suite_name, {}).get(int(case["id"]))
+        if not authored:
+            return generated
+        return {
+            **generated,
+            **authored,
+            "adversarial_type": authored.get("adversarial_type", generated.get("adversarial_type", suite_name)),
+            "original_query": authored.get("original_query", case["query"])
+        }
 
     def generate_paraphrase(self, case: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -166,11 +204,13 @@ class AdversarialGenerator:
         """
         Produces 4 full test suites corresponding to the 4 adversarial dimensions.
         """
+        paraphrased = [self._apply_hand_authored("paraphrase", c, self.generate_paraphrase(c)) for c in clean_cases]
+        subtle_error = [self._apply_hand_authored("subtle_error", c, self.generate_subtle_error(c)) for c in clean_cases]
         suites = {
             "clean": clean_cases,
-            "paraphrased": [self.generate_paraphrase(c) for c in clean_cases],
+            "paraphrased": paraphrased,
             "injected_context": [self.generate_injected_context(c) for c in clean_cases],
-            "subtle_error": [self.generate_subtle_error(c) for c in clean_cases],
+            "subtle_error": subtle_error,
             "edge_case": [self.generate_edge_case(c) for c in clean_cases]
         }
         return suites
@@ -191,7 +231,8 @@ def build_and_save_adversarial_suites(
             if line:
                 clean_cases.append(json.loads(line))
 
-    generator = AdversarialGenerator(seed=seed)
+    hand_authored_dir = os.path.join(os.path.dirname(os.path.dirname(dataset_path)), "data", "adversarial")
+    generator = AdversarialGenerator(seed=seed, hand_authored_dir=hand_authored_dir)
     suites = generator.generate_all_suites(clean_cases)
 
     with open(output_path, "w", encoding="utf-8") as f:

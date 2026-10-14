@@ -119,6 +119,70 @@ def test_adversarial_generators():
     assert edge["adversarial_type"] == "edge_case"
 
 
+def test_hand_authored_adversarial_override(tmp_path):
+    """Verifies hand-authored JSONL adversarial cases override generated mutations."""
+    hand_dir = tmp_path / "adversarial"
+    hand_dir.mkdir()
+    override = {
+        "id": 1,
+        "adversarial_type": "paraphrased",
+        "query": "Human-written paraphrase for Raft failure tolerance."
+    }
+    (hand_dir / "paraphrase.jsonl").write_text(json.dumps(override) + "\n", encoding="utf-8")
+
+    gen = AdversarialGenerator(seed=42, hand_authored_dir=str(hand_dir))
+    suites = gen.generate_all_suites([
+        {"id": 1, "query": "How many failures?", "expected_answer": "2", "source_context": "2 failures"}
+    ])
+
+    assert suites["paraphrased"][0]["query"] == "Human-written paraphrase for Raft failure tolerance."
+
+
+def test_required_and_forbidden_fact_scoring():
+    """Verifies required facts must be supported and forbidden facts fail the answer."""
+    assert check_answer_accuracy(
+        model_answer="The 2023 addendum recommends joint consensus for membership changes.",
+        expected_answer="Use joint consensus.",
+        adv_type="clean",
+        is_hallucination=False,
+        required_facts=["2023 addendum", "joint consensus"],
+        forbidden_facts=["single-server membership changes"]
+    )
+    assert not check_answer_accuracy(
+        model_answer="Use single-server membership changes applied one at a time.",
+        expected_answer="Use joint consensus.",
+        adv_type="clean",
+        is_hallucination=False,
+        required_facts=["joint consensus"],
+        forbidden_facts=["single-server membership changes"]
+    )
+
+
+def test_span_grounding_validation():
+    """Verifies forced quote + doc_id grounding checks against corpus text."""
+    harness = EvaluationHarness.__new__(EvaluationHarness)
+    harness.corpus_by_id = {
+        "doc1": {
+            "id": "doc1",
+            "text": "A 5-server Raft cluster tolerates 2 server failures. Election timeout is 150ms to 300ms."
+        }
+    }
+    response = RagResponse(
+        reasoning="grounded",
+        extracted_claims=["A 5-server Raft cluster tolerates 2 server failures."],
+        typed_claims=[{"type": "raft_failure_tolerance", "value": "2"}],
+        answer="A 5-server Raft cluster tolerates 2 server failures.",
+        supporting_quote="A 5-server Raft cluster tolerates 2 server failures",
+        source_doc_id="doc1",
+        confidence_score=0.9,
+        rewritten_query="Raft failures",
+        retrieved_context=""
+    )
+
+    ok, reason = harness.validate_grounding(response, {"answer_type": "answerable", "expected_source_doc_id": "doc1"})
+    assert ok, reason
+
+
 def test_calibration_metrics():
     """Verifies Module C ECE, MCE, and Brier score calculation."""
     calibrator = ConfidenceCalibrator(n_bins=5)
@@ -179,3 +243,29 @@ def test_regression_detection(tmp_path):
     assert diff["num_regressions"] == 1
     assert diff["num_improvements"] == 1
     assert diff["regressions"][0]["id"] == 1
+
+
+def test_threshold_regression_detection(tmp_path):
+    """Verifies metric-threshold regressions fail even without every case flipping."""
+    baseline_file = str(tmp_path / "baseline.json")
+    baseline_payload = {
+        "all_results": [
+            {"id": 1, "suite": "clean", "query": "Q1", "is_correct": True, "is_hallucination": False},
+            {"id": 2, "suite": "clean", "query": "Q2", "is_correct": True, "is_hallucination": False},
+            {"id": 3, "suite": "clean", "query": "Q3", "is_correct": True, "is_hallucination": False},
+        ]
+    }
+    with open(baseline_file, "w", encoding="utf-8") as f:
+        json.dump(baseline_payload, f)
+
+    current_results = [
+        {"id": 1, "suite": "clean", "query": "Q1", "is_correct": True, "is_hallucination": False},
+        {"id": 2, "suite": "clean", "query": "Q2", "is_correct": True, "is_hallucination": False},
+        {"id": 3, "suite": "clean", "query": "Q3", "is_correct": False, "is_hallucination": False},
+    ]
+
+    harness = EvaluationHarness.__new__(EvaluationHarness)
+    diff = harness.compare_with_baseline(current_results, baseline_file, accuracy_regression_threshold=0.10)
+
+    assert diff["status"] == "REGRESSIONS_DETECTED"
+    assert diff["num_metric_regressions"] == 1

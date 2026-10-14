@@ -40,7 +40,7 @@ This repository contains a complete, production-grade **Target LLM QA RAG System
                                                │ Cleaned Query
                                                ▼
     ┌──────────────────────────┐     ┌───────────────────┐
-    │  Technical Corpus (25)   │ ──> │ FAISS Vector Store│
+    │  Technical Corpus (29)   │ ──> │ FAISS Vector Store│
     │  Distributed, Cloud,     │     │ Dense SVD/Cosine  │
     │  Physics, Pharma, Algos  │     └─────────┬─────────┘
     └──────────────────────────┘               │ Top-k Chunks
@@ -52,7 +52,8 @@ This repository contains a complete, production-grade **Target LLM QA RAG System
                                                │ Structured JSON
                                                ▼
                            ┌─────────────────────────────────────────┐
-                           │ { reasoning, extracted_claims, answer,  │
+                           │ { reasoning, extracted_claims,          │
+                           │   typed_claims, answer, quote, doc_id,  │
                            │   confidence_score }                    │
                            └───────────────────┬─────────────────────┘
                                                │
@@ -91,19 +92,26 @@ Our target system inserts a deterministic **Contextual Query Rewriting step** be
 #### Empirical Validation:
 When evaluated on the `injected_context` suite:
 - Without Rewriter: Vector retrieval fails on distractors, and hallucination skyrockets.
-- With Rewriter: Query retains core semantic intent, maintaining **45.5% accuracy** in the current deterministic run while filtering out irrelevant competitor telemetry.
+- With Rewriter: Query retains core semantic intent, maintaining **45.2% accuracy** in the current deterministic run while filtering out irrelevant competitor telemetry under strict quote-grounded scoring.
 
 ---
 
 ## 3. Ground Truth Dataset & Verification Integrity
 
-The ground-truth dataset consists of **60 rigorously verified test cases** stored in [data/dataset.jsonl](data/dataset.jsonl): 55 answerable questions spanning 5 technical domains (11 cases per domain) plus 5 manually verified **unanswerable** probes where the correct behavior is refusal instead of hallucination:
+The ground-truth dataset consists of **62 rigorously verified test cases** stored in [data/dataset.jsonl](data/dataset.jsonl): 55 answerable questions spanning 5 technical domains (11 cases per domain), 5 manually verified **unanswerable** probes where the correct behavior is refusal instead of hallucination, and 2 **temporal conflict** probes where a newer source explicitly supersedes an older source:
 1. **Distributed Systems & Consensus:** Raft leader election, CAP theorem, Vector clocks, Two-Phase Commit, Gossip protocols.
 2. **Enterprise Cloud Reliability:** SLA downtime mathematics (99.99% availability = 52.6 min/year), RTO vs. RPO, S3 object locks, token-bucket rate limiting, NIST SP 800-207 Zero Trust.
 3. **Aerospace & Physics:** Hohmann orbital transfers, Lagrange points L1–L5, Tsiolkovsky rocket equation, hypersonic blunt-body shock physics, Kepler's laws.
 4. **Pharmacology & Clinical Trials:** FDA Phases I–IV, first-order elimination half-life kinetics (97% eliminated at 5 half-lives), ADCC/CDC mechanisms, double-blind study design, Therapeutic Index.
 5. **Algorithms & Computational Complexity:** Master Theorem Case 1, Dijkstra with min-heap vs Fibonacci heap, Bellman-Ford, Cook-Levin SAT theorem, B-Trees, Bloom filter zero false negatives.
 6. **Unanswerable / Out-of-Corpus Probes:** Kubernetes release history, TLS 1.3 cipher internals, vancomycin renal dosing, Crew Dragon hardware specs, and CPython garbage collection internals were manually verified absent from the corpus.
+7. **Temporal Conflict / Version Precedence:** Raft membership-change documents from 2014 and 2023 intentionally conflict; the expected answer must prefer the superseding 2023 addendum.
+
+Each ground-truth record now also includes structured evaluation metadata:
+- `required_facts`: facts that must be supported by the answer.
+- `forbidden_facts`: stale, false, or poisoned facts that must not appear.
+- `expected_source_doc_id` and `expected_supporting_quote`: forced span-grounding targets.
+- `expected_typed_claims`: structured claims for cases that require typed verification.
 
 ### Strict Human Verification Guarantee
 To satisfy the strict constraint against unverified synthetic data:
@@ -117,7 +125,11 @@ To satisfy the strict constraint against unverified synthetic data:
     "source_context": "The Raft consensus algorithm decomposes consensus... cluster typically consists of 5 servers, allowing the system to tolerate 2 failures...",
     "domain": "Distributed Systems",
     "verification_status": "Human Verified",
-    "audit_notes": "Ground truth verified against Raft specification; majority quorum requires at least 3 nodes active."
+    "audit_notes": "Ground truth verified against Raft specification; majority quorum requires at least 3 nodes active.",
+    "required_facts": ["A 5-server Raft cluster can tolerate at most 2 node failures while maintaining consensus."],
+    "forbidden_facts": [],
+    "expected_source_doc_id": "doc_dist_01",
+    "expected_supporting_quote": "The Raft consensus algorithm decomposes consensus into leader election, log replication, and safety"
   }
   ```
 
@@ -136,11 +148,13 @@ To satisfy the strict constraint against unverified synthetic data:
 - Outputs `(is_hallucination: bool, summary_reasoning: str, per_claim_verdicts: list)`.
 
 ### Module B: 4-Way Adversarial Input Generators (`evaluation/adversarial.py`)
-Generates 4 distinct adversarial test suites (60 cases each = 240 adversarial tests):
+Generates 4 distinct adversarial test suites (62 cases each = 248 adversarial tests):
 1. **`paraphrased`:** Structural rewrites using audit, indirect-question, specification-resolution, and no-original-wording templates rather than only simple token substitutions.
 2. **`injected_context`:** Appends high-entropy technical distractors (e.g. Cassandra telemetry, Prometheus scrape configs, Apollo burn logs) directly into the query.
 3. **`subtle_error`:** Layers poisoned premises, swapped dates, altered node counts, false standards, and stale-version framing to probe sycophancy.
 4. **`edge_case`:** Complex negative constraint wrapping (`<<<SYSTEM_OVERRIDE>>>`, XML schema embedding, extreme brevity constraints, negative token prohibitions).
+
+The paraphrase and subtle-error suites use hand-authored JSONL overrides in [data/adversarial/paraphrase.jsonl](data/adversarial/paraphrase.jsonl) and [data/adversarial/subtle_error.jsonl](data/adversarial/subtle_error.jsonl) for high-value probes, then fall back to deterministic generators for full coverage.
 
 ### Module C: Confidence Calibration & Reliability Analysis (`evaluation/calibration.py`)
 - Extracts the model's self-reported `confidence_score` ($0.0 \dots 1.0$) and pairs it with empirical binary accuracy $y_i \in \{0, 1\}$.
@@ -169,7 +183,8 @@ Provides both macro-level unsupervised clustering and a granular 8-archetype beh
 ### Module E: Deterministic Regression Runner (`evaluation/runner.py`)
 - CLI test runner that executes suites deterministically (`seed=42`, `temperature=0.0`).
 - Saves baseline state to `data/baseline_results.json`.
-- Compares new runs against baseline (`--compare-baseline`) tracking 4 distinct differential dimensions:
+- Enforces required/forbidden facts, typed claims, and exact quote/doc-id grounding before a case can pass.
+- Compares new runs against baseline (`--compare-baseline`) tracking case-level regressions plus metric-threshold gates (`--accuracy-regression-threshold`, `--hallucination-regression-threshold`):
   - `REGRESSIONS` (previously PASS $\to$ now FAIL) — triggers non-zero CI exit code.
   - `NEW PASSES` (previously FAIL $\to$ now PASS).
   - `NEW HALLUCINATIONS` (previously grounded $\to$ now hallucinated).
@@ -179,19 +194,19 @@ Provides both macro-level unsupervised clustering and a granular 8-archetype beh
 
 ## 5. Evaluation Results & Empirical Findings
 
-From full execution across all 300 evaluation cases:
+From full execution across all 310 evaluation cases:
 
 | Suite | Evaluated Cases | Accuracy | Hallucination Rate | Resilience Diagnosis |
 | :--- | :---: | :---: | :---: | :--- |
-| **`clean`** | 60 | **50.0%** | 8.3% | Baseline factual retrieval plus correct refusal on unanswerable probes |
-| **`paraphrased`** | 60 | **45.0%** | 15.0% | Harder structural paraphrases expose some rewrite/retrieval brittleness |
-| **`injected_context`** | 60 | **50.0%** | 8.3% | Query rewriter mitigates distractor hijack and telemetry noise |
-| **`subtle_error`** | 60 | **13.3%** | 45.0% | Layered false-premise attacks expose strong sycophancy and hallucination risk |
-| **`edge_case`** | 60 | **35.0%** | 31.7% | XML/system-wrapper constraints reveal schema and negative-constraint brittleness |
-| **Overall** | **300** | **38.7%** | **21.7%** | **Expected Calibration Error: 0.398** |
+| **`clean`** | 62 | **45.2%** | 8.1% | Baseline factual retrieval plus strict span-grounded scoring |
+| **`paraphrased`** | 62 | **33.9%** | 25.8% | Hand-authored paraphrases expose retrieval and citation brittleness |
+| **`injected_context`** | 62 | **45.2%** | 8.1% | Query rewriter mitigates distractor hijack and telemetry noise |
+| **`subtle_error`** | 62 | **11.3%** | 50.0% | Layered false-premise attacks expose strong sycophancy and hallucination risk |
+| **`edge_case`** | 62 | **38.7%** | 25.8% | XML/system-wrapper constraints reveal schema and negative-constraint brittleness |
+| **Overall** | **310** | **34.8%** | **23.5%** | **Expected Calibration Error: 0.432** |
 
 ### Calibration Analysis & Bimodal Overconfidence
-- **ECE = 0.398 | MCE = 0.457 | Brier = 0.429**
+- **ECE = 0.432 | MCE = 0.515 | Brier = 0.436**
 - **Overconfidence Phenomenon:** The offline simulator now spreads confidence across multiple deterministic values rather than one artificial bucket, but it remains overconfident: mean predicted confidence is materially higher than empirical accuracy.
 - Confirms the model outputs high verbalized confidence even when confabulating explanations for false presuppositions.
 
@@ -208,7 +223,7 @@ A production-grade evaluation harness must explicitly isolate evaluation measure
 ## 6. Interview Defense Guide
 
 ### Q1: "How do you know your ground truth dataset is correct?"
-> *"Every one of the 60 test cases in `data/dataset.jsonl` was manually verified. The 55 answerable cases map to canonical source passages across 5 engineering disciplines, and the 5 unanswerable probes were verified absent from the corpus by manual corpus review. No synthetic LLM output was accepted without human verification. Each entry contains source context or an explicit absence audit note."*
+> *"Every one of the 62 test cases in `data/dataset.jsonl` was manually verified. The 55 answerable cases map to canonical source passages across 5 engineering disciplines, the 5 unanswerable probes were verified absent from the corpus by manual corpus review, and the 2 temporal conflict probes specify which newer document supersedes older guidance. No synthetic LLM output was accepted without human verification. Each entry contains source context or an explicit absence audit note plus structured required/forbidden facts and grounding metadata."*
 
 ### Q2: "Where does your hallucination detection logic fail?"
 > *"Our NLI entailment judge relies on claim-level decomposition and secondary LLM evaluation. It can fail in three specific failure modes:*
@@ -220,8 +235,7 @@ A production-grade evaluation harness must explicitly isolate evaluation measure
 > *"This is a consequence of autoregressive Next-Token Prediction combined with RLHF alignment training. During RLHF, models are heavily reinforced to be 'helpful' and agreeable to user framing. When an adversarial prompt asks 'How many server failures did Raft tolerate during its 2019 Microsoft release?', the high-probability tokens following the prompt complete the narrative rather than refuting the user. Attention heads attend to prompt tokens as given ground-truth conditions, creating an attention-bias that overrides retrieved context."*
 
 ### Q4: "Design one more adversarial test category you did not include."
-> *"Temporal Anchor Drift & State Invalidation.*
-> *In production enterprise RAG systems, documentation evolves over time (e.g. API v1 deprecation in 2023 replaced by API v2 in 2025). This category would feed the system two chronologically disjoint chunks where Chunk B explicitly supersedes Chunk A, and ask a query using subtle temporal framing. Naive RAG systems retrieve both chunks and average their claims or retrieve Chunk A due to keyword frequency, asserting outdated facts. Testing for temporal invalidation probes whether the system understands temporal precedence."*
+> *"Temporal Anchor Drift & State Invalidation is now implemented as a first-class test category. The corpus includes conflicting 2014 and 2023 Raft membership-change documents, and the expected answer must cite the superseding 2023 document rather than average both sources or repeat stale guidance."*
 
 ---
 

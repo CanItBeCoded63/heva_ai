@@ -22,6 +22,7 @@ def generate_markdown_report(eval_data: Dict[str, Any], output_path: str = "EVAL
     overall_hall = eval_data.get("overall_hallucination_rate", 0.0)
     total_cases = eval_data.get("total_evaluated_cases", 0)
     suites = eval_data.get("suite_breakdown", {})
+    coverage = eval_data.get("coverage", {})
     calibration = eval_data.get("calibration", {})
     clustering = eval_data.get("clustering", {})
 
@@ -39,6 +40,10 @@ def generate_markdown_report(eval_data: Dict[str, Any], output_path: str = "EVAL
 
     first_suite_size = next((stats.get("total", 0) for stats in suites.values()), 0)
     adversarial_cases = max(total_cases - first_suite_size, 0)
+    corpus_case_note = (
+        f"{first_suite_size} cases per category = {total_cases} total cases, including answerable, "
+        "unanswerable, and temporal-conflict probes"
+    )
 
     # Format suite breakdown table
     suite_rows = []
@@ -103,10 +108,10 @@ def generate_markdown_report(eval_data: Dict[str, Any], output_path: str = "EVAL
 
     report_content = f"""# Adversarial Evaluation Report: Target QA RAG System
 
-**System Under Test:** Span-Grounded Question Answering RAG System over Multi-Domain Technical Corpus  
-**Evaluation Harness:** Custom Pure-Python Adversarial Evaluation Suite (Zero 3rd-Party Eval Frameworks)  
-**Determinism Standard:** Fixed Seed (`seed=42`), Greedy Decoding (`temperature=0.0`)  
-**Total Test Cases Evaluated:** {total_cases} across Clean and 4 Adversarial Perturbation Vectors  
+**System Under Test:** Span-Grounded Question Answering RAG System over Multi-Domain Technical Corpus
+**Evaluation Harness:** Custom Pure-Python Adversarial Evaluation Suite (Zero 3rd-Party Eval Frameworks)
+**Determinism Standard:** Fixed Seed (`seed=42`), Greedy Decoding (`temperature=0.0`)
+**Total Test Cases Evaluated:** {total_cases} across Clean and 4 Adversarial Perturbation Vectors
 
 ---
 
@@ -125,7 +130,7 @@ def generate_markdown_report(eval_data: Dict[str, Any], output_path: str = "EVAL
 
 ## 2. Accuracy & Hallucination Breakdown by Input Category
 
-The evaluation suite benchmarked the target system across clean inputs and 4 distinct adversarial mutation vectors ({first_suite_size} cases per category = {total_cases} total cases, including answerable and unanswerable probes):
+The evaluation suite benchmarked the target system across clean inputs and 4 distinct adversarial mutation vectors ({corpus_case_note}):
 
 | Input Category | Sample Size | Accuracy | Hallucination Rate | Resilience Profile |
 | :--- | :---: | :---: | :---: | :--- |
@@ -137,6 +142,21 @@ The evaluation suite benchmarked the target system across clean inputs and 4 dis
 3. **Injected Distractor Resilience ({suites.get('injected_context', {}).get('accuracy', 0.0):.1%}):** The **Contextual Query Rewriter** successfully stripped out high-entropy telemetry noise and competitor logs, preventing retrieval hijacking.
 4. **Catastrophic Sycophancy on Subtle Errors ({suites.get('subtle_error', {}).get('accuracy', 0.0):.1%}):** Accuracy collapsed to near-zero when queries contained false presuppositions (e.g. asking about node counts under a non-existent version). The model uncritically accepted the user's false framing.
 5. **Edge Case Constraints ({suites.get('edge_case', {}).get('accuracy', 0.0):.1%}):** The model demonstrated moderate resilience to atypical schema formats (XML, strict brevity constraints, negative token prohibitions).
+
+### Structural Evaluation Gates
+Beyond answer overlap and hallucination checks, each answerable case must now pass mechanical grounding checks:
+- **Required / Forbidden Facts:** answers must include required facts and avoid stale, poisoned, or false facts declared in the dataset.
+- **Forced Span Grounding:** answers must return a `source_doc_id` plus a `supporting_quote` that appears verbatim in that corpus document.
+- **Typed Claims:** selected cases include structured expected claims such as temporal precedence over superseded documents.
+
+| Coverage Check | Count |
+| :--- | ---: |
+| Grounding checks executed | {coverage.get('grounding_checked', 0)} |
+| Grounding failures | {coverage.get('grounding_failures', 0)} |
+| Typed-claim checks executed | {coverage.get('typed_claims_checked', 0)} |
+| Typed-claim failures | {coverage.get('typed_claim_failures', 0)} |
+| System errors | {coverage.get('system_errors', 0)} |
+| Pending cases | {coverage.get('pending', 0)} |
 
 ---
 
@@ -200,6 +220,7 @@ A rigorous evaluation harness must honestly distinguish between **actual model f
 
 The evaluation harness implements stateful differential tracking via `runner.py --compare-baseline`:
 - **Stateful Snapshot:** Persists full execution results to `data/baseline_results.json`.
+- **Metric Threshold Gates:** Fails CI if overall accuracy drops by more than `--accuracy-regression-threshold` (default `0.02`) or hallucination rate rises by more than `--hallucination-regression-threshold` (default `0.02`).
 - **4-Way Differential Tracking:**
   - `REGRESSIONS`: Previously passing test cases that now fail (triggers non-zero CI exit code).
   - `NEW PASSES`: Previously failing test cases that now pass (validates prompt improvements).
@@ -214,7 +235,8 @@ In accordance with strict evaluation honesty standards:
 1. **Independent Double-Blind Ground-Truth Verification:** While all {first_suite_size} test cases were verified against canonical technical textbooks, standards, corpus absence checks, and human audit notes, an independent second-party cross-validation pass is recommended before mission-critical deployment.
 2. **Scoring Heuristic Nuance:** While our hybrid hallucination detector combines symbolic numeric/date containment with semantic NLI judges, subtle semantic negations (e.g. "at least 15%" vs "at most 15%") where numbers match can occasionally pass purely symbolic filters.
 3. **Bimodal Calibration Gap:** The model does not produce well-spread calibrated confidence scores; post-hoc Platt scaling or isotonic regression on a held-out set is strictly required before exposing confidence scores to users.
-4. **Synthetic Adversarial Boundary:** Our 4 mutation operators stress-test semantic, syntactic, and structural robustness, but do not simulate multi-turn adversarial prompt injections.
+4. **Temporal Scope Boundary:** The corpus now includes explicit supersession conflicts, but only in a narrow Raft membership-change scenario. Broader temporal reasoning would require more multi-version documents across domains.
+5. **Synthetic Adversarial Boundary:** Our 4 mutation operators stress-test semantic, syntactic, and structural robustness, but do not simulate multi-turn adversarial prompt injections.
 """
 
     with open(output_path, "w", encoding="utf-8") as f:

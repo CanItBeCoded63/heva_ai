@@ -31,7 +31,7 @@ workspace_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if workspace_root not in sys.path:
     sys.path.insert(0, workspace_root)
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 from target_system.schemas import QueryRequest, RagResponse
 from target_system.rag_engine import QARagSystem
 from target_system.vector_store import FaissVectorStore
@@ -41,12 +41,41 @@ from evaluation.clustering import FailureClusterer
 from evaluation.adversarial import AdversarialGenerator
 
 
+STOPWORDS = {
+    "which", "their", "there", "about", "would", "could", "should", "under",
+    "after", "while", "where", "this", "that", "with", "from", "into", "than",
+    "then", "they", "them", "have", "has", "been", "being", "will", "does"
+}
+
+
+def _content_tokens(text: str) -> set:
+    return set(re.findall(r"\b[A-Za-z0-9_-]{4,}\b", text.lower())) - STOPWORDS
+
+
+def _fact_is_supported(fact: str, answer: str, min_overlap: float = 0.60) -> bool:
+    fact_tokens = _content_tokens(fact)
+    if not fact_tokens:
+        return True
+    answer_tokens = _content_tokens(answer)
+    return len(fact_tokens.intersection(answer_tokens)) / len(fact_tokens) >= min_overlap
+
+
+def _forbidden_fact_present(fact: str, answer: str) -> bool:
+    fact_tokens = _content_tokens(fact)
+    if not fact_tokens:
+        return False
+    answer_tokens = _content_tokens(answer)
+    return fact.lower() in answer.lower() or fact_tokens.issubset(answer_tokens)
+
+
 def check_answer_accuracy(
     model_answer: str,
     expected_answer: str,
     adv_type: str,
     is_hallucination: bool,
-    answer_type: str = "answerable"
+    answer_type: str = "answerable",
+    required_facts: Optional[List[str]] = None,
+    forbidden_facts: Optional[List[str]] = None
 ) -> bool:
     """
     Evaluates whether the model answer satisfies ground truth.
@@ -56,6 +85,9 @@ def check_answer_accuracy(
     3. Key factual tokens from expected_answer are absent from the model answer.
     """
     if is_hallucination:
+        return False
+
+    if forbidden_facts and any(_forbidden_fact_present(fact, model_answer) for fact in forbidden_facts):
         return False
 
     if answer_type == "unanswerable" or adv_type == "unanswerable":
@@ -85,13 +117,15 @@ def check_answer_accuracy(
         # If the model blindly answered without any refutation signal, it failed
         return False
 
+    if required_facts:
+        return all(_fact_is_supported(fact, model_answer) for fact in required_facts)
+
     # Extract key content words from expected answer
     expected_words = set(re.findall(r"\b[A-Za-z0-9_-]{4,}\b", expected_answer.lower()))
     model_words = set(re.findall(r"\b[A-Za-z0-9_-]{4,}\b", model_answer.lower()))
 
     # Ignore generic stopwords
-    stopwords = {"which", "their", "there", "about", "would", "could", "should", "under", "after", "while", "where"}
-    expected_words = expected_words - stopwords
+    expected_words = expected_words - STOPWORDS
 
     if not expected_words:
         return True
@@ -121,6 +155,7 @@ class EvaluationHarness:
         # Load corpus and build FAISS index
         with open(corpus_path, "r", encoding="utf-8") as f:
             corpus = json.load(f)
+        self.corpus_by_id = {doc["id"]: doc for doc in corpus}
         self.vector_store.build_index(corpus)
 
         self.target_system = QARagSystem(
@@ -134,6 +169,58 @@ class EvaluationHarness:
         )
         self.calibrator = ConfidenceCalibrator(n_bins=5)
         self.clusterer = FailureClusterer(n_clusters=3, seed=seed)
+
+    def validate_grounding(
+        self,
+        response: RagResponse,
+        case: Dict[str, Any]
+    ) -> Tuple[bool, str]:
+        """
+        Validates forced span-grounding: answerable cases must cite a real document
+        id and provide a quote that occurs verbatim in that document.
+        """
+        answer_type = case.get("answer_type", "answerable")
+        if answer_type == "unanswerable":
+            return True, "Unanswerable case does not require a supporting quote."
+
+        source_doc_id = (response.source_doc_id or "").strip()
+        supporting_quote = (response.supporting_quote or "").strip().rstrip(".")
+        if not source_doc_id or not supporting_quote:
+            return False, "Missing source_doc_id or supporting_quote."
+
+        source_doc = self.corpus_by_id.get(source_doc_id)
+        if not source_doc:
+            return False, f"Unknown source_doc_id: {source_doc_id}"
+
+        doc_text = source_doc.get("text", "").strip()
+        quote_match = supporting_quote.lower() in doc_text.lower()
+        expected_doc = case.get("expected_source_doc_id")
+        expected_doc_match = not expected_doc or source_doc_id == expected_doc
+        if not quote_match:
+            return False, "Supporting quote is not a verbatim span from the cited document."
+        if not expected_doc_match:
+            return False, f"Cited {source_doc_id}, expected {expected_doc}."
+        return True, "Grounding quote verified."
+
+    def validate_typed_claims(
+        self,
+        response: RagResponse,
+        case: Dict[str, Any]
+    ) -> Tuple[bool, str]:
+        expected_claims = case.get("expected_typed_claims") or []
+        if not expected_claims:
+            return True, "No typed-claim expectation for this case."
+
+        actual_claims = response.typed_claims or []
+        for expected in expected_claims:
+            if expected.get("type") == "temporal_precedence":
+                expected_doc = expected.get("winning_doc_id")
+                if response.source_doc_id == expected_doc:
+                    return True, "Temporal precedence claim verified by cited source."
+                continue
+            if expected in actual_claims:
+                return True, "Typed claim matched exactly."
+        return False, f"Missing expected typed claim: {expected_claims}"
 
     def run_suite(
         self,
@@ -150,6 +237,8 @@ class EvaluationHarness:
         accuracies = []
         hallucination_flags = []
         failures = []
+        grounding_failures = []
+        typed_claim_failures = []
 
         for i, case in enumerate(test_cases):
             query_text = case["query"]
@@ -174,8 +263,13 @@ class EvaluationHarness:
                 expected_answer=expected_answer,
                 adv_type=adv_type,
                 is_hallucination=is_hallucinated,
-                answer_type=answer_type
+                answer_type=answer_type,
+                required_facts=case.get("required_facts"),
+                forbidden_facts=case.get("forbidden_facts")
             )
+            grounding_ok, grounding_reason = self.validate_grounding(response, case)
+            typed_claims_ok, typed_claims_reason = self.validate_typed_claims(response, case)
+            is_correct = bool(is_correct and grounding_ok and typed_claims_ok)
 
             record = {
                 "id": case.get("id", i + 1),
@@ -187,6 +281,15 @@ class EvaluationHarness:
                 "model_answer": response.answer,
                 "reasoning": response.reasoning,
                 "extracted_claims": response.extracted_claims,
+                "typed_claims": response.typed_claims,
+                "supporting_quote": response.supporting_quote,
+                "source_doc_id": response.source_doc_id,
+                "grounding_ok": grounding_ok,
+                "grounding_reason": grounding_reason,
+                "typed_claims_ok": typed_claims_ok,
+                "typed_claims_reason": typed_claims_reason,
+                "required_facts": case.get("required_facts", []),
+                "forbidden_facts": case.get("forbidden_facts", []),
                 "confidence_score": response.confidence_score,
                 "is_hallucination": is_hallucinated,
                 "hallucination_reason": hall_reason,
@@ -200,6 +303,10 @@ class EvaluationHarness:
 
             if not is_correct:
                 failures.append(record)
+            if not grounding_ok:
+                grounding_failures.append(record)
+            if not typed_claims_ok:
+                typed_claim_failures.append(record)
 
         acc_score = sum(accuracies) / max(len(accuracies), 1)
         hall_rate = sum(hallucination_flags) / max(len(hallucination_flags), 1)
@@ -215,6 +322,14 @@ class EvaluationHarness:
             "results": results,
             "confidences": confidences,
             "accuracies": accuracies,
+            "coverage": {
+                "grounding_checked": len(results),
+                "grounding_failures": len(grounding_failures),
+                "typed_claims_checked": sum(1 for r in results if r["typed_claims_ok"] is not None),
+                "typed_claim_failures": len(typed_claim_failures),
+                "system_errors": 0,
+                "pending": 0
+            },
             "failures": failures
         }
 
@@ -231,14 +346,25 @@ class EvaluationHarness:
         all_confidences = []
         all_accuracies = []
         all_failures = []
+        coverage = {
+            "grounding_checked": 0,
+            "grounding_failures": 0,
+            "typed_claims_checked": 0,
+            "typed_claim_failures": 0,
+            "system_errors": 0,
+            "pending": 0
+        }
 
         for suite_name, cases in all_suites.items():
             report = self.run_suite(cases, suite_name)
             suite_reports[suite_name] = {
                 "total": report["total_cases"],
                 "accuracy": report["accuracy"],
-                "hallucination_rate": report["hallucination_rate"]
+                "hallucination_rate": report["hallucination_rate"],
+                "coverage": report["coverage"]
             }
+            for key in coverage:
+                coverage[key] += report["coverage"].get(key, 0)
             all_results.extend(report["results"])
             all_confidences.extend(report["confidences"])
             all_accuracies.extend(report["accuracies"])
@@ -264,6 +390,7 @@ class EvaluationHarness:
             "overall_accuracy": overall_accuracy,
             "overall_hallucination_rate": overall_hall_rate,
             "total_evaluated_cases": total_cases,
+            "coverage": coverage,
             "suite_breakdown": suite_reports,
             "calibration": calib_metrics,
             "clustering": cluster_metrics,
@@ -274,7 +401,9 @@ class EvaluationHarness:
     def compare_with_baseline(
         self,
         current_results: List[Dict[str, Any]],
-        baseline_filepath: str
+        baseline_filepath: str,
+        accuracy_regression_threshold: float = 0.02,
+        hallucination_regression_threshold: float = 0.02
     ) -> Dict[str, Any]:
         """
         Detects regressions against previously saved baseline.
@@ -296,12 +425,16 @@ class EvaluationHarness:
         stable_fail = []
         new_hallucinations = []
         resolved_hallucinations = []
+        matched_current = []
+        matched_baseline = []
 
         for curr in current_results:
             key = f"{curr.get('suite', 'clean')}_{curr['id']}"
             base = baseline_map.get(key)
             if not base:
                 continue
+            matched_current.append(curr)
+            matched_baseline.append(base)
 
             base_correct = base.get("is_correct", False)
             curr_correct = curr.get("is_correct", False)
@@ -329,6 +462,32 @@ class EvaluationHarness:
             elif base_hall and not curr_hall:
                 resolved_hallucinations.append(curr)
 
+        baseline_accuracy = sum(1 for r in matched_baseline if r.get("is_correct", False)) / max(len(matched_baseline), 1)
+        current_accuracy = sum(1 for r in matched_current if r.get("is_correct", False)) / max(len(matched_current), 1)
+        baseline_hallucination_rate = sum(1 for r in matched_baseline if r.get("is_hallucination", False)) / max(len(matched_baseline), 1)
+        current_hallucination_rate = sum(1 for r in matched_current if r.get("is_hallucination", False)) / max(len(matched_current), 1)
+        accuracy_delta = current_accuracy - baseline_accuracy
+        hallucination_delta = current_hallucination_rate - baseline_hallucination_rate
+        metric_regressions = []
+        if accuracy_delta < -accuracy_regression_threshold:
+            metric_regressions.append({
+                "metric": "accuracy",
+                "baseline": baseline_accuracy,
+                "current": current_accuracy,
+                "delta": accuracy_delta,
+                "threshold": accuracy_regression_threshold
+            })
+        if hallucination_delta > hallucination_regression_threshold:
+            metric_regressions.append({
+                "metric": "hallucination_rate",
+                "baseline": baseline_hallucination_rate,
+                "current": current_hallucination_rate,
+                "delta": hallucination_delta,
+                "threshold": hallucination_regression_threshold
+            })
+
+        count_mismatch = len(current_results) != len(baseline_data.get("all_results", []))
+
         print("\n" + "=" * 60)
         print("REGRESSION ANALYSIS SUMMARY:")
         print("=" * 60)
@@ -336,6 +495,10 @@ class EvaluationHarness:
         print(f"  Improvements (Previously FAIL -> Now PASS): {len(improvements)}")
         print(f"  New Hallucinations (Was Grounded -> Now Hallucinated): {len(new_hallucinations)}")
         print(f"  Resolved Hallucinations (Was Hallucinated -> Now Grounded): {len(resolved_hallucinations)}")
+        print(f"  Accuracy Delta: {accuracy_delta:+.2%} (threshold -{accuracy_regression_threshold:.2%})")
+        print(f"  Hallucination Delta: {hallucination_delta:+.2%} (threshold +{hallucination_regression_threshold:.2%})")
+        if count_mismatch:
+            print(f"  Coverage Warning: baseline has {len(baseline_data.get('all_results', []))} cases, current has {len(current_results)} cases")
         print(f"  Stable Passes: {len(stable_pass)}")
         print(f"  Stable Failures: {len(stable_fail)}")
         print("=" * 60)
@@ -345,12 +508,21 @@ class EvaluationHarness:
             for reg in regressions[:5]:
                 print(f"    - Case #{reg['id']} [{reg['suite']}]: {reg['query'][:60]}...")
 
+        status = "REGRESSIONS_DETECTED" if regressions or metric_regressions else "CLEAN"
+
         return {
-            "status": "REGRESSIONS_DETECTED" if regressions else "CLEAN",
+            "status": status,
             "num_regressions": len(regressions),
+            "num_metric_regressions": len(metric_regressions),
             "num_improvements": len(improvements),
             "num_new_hallucinations": len(new_hallucinations),
             "num_resolved_hallucinations": len(resolved_hallucinations),
+            "coverage_warning": count_mismatch,
+            "metric_deltas": {
+                "accuracy_delta": accuracy_delta,
+                "hallucination_delta": hallucination_delta
+            },
+            "metric_regressions": metric_regressions,
             "regressions": regressions,
             "improvements": improvements,
             "new_hallucinations": new_hallucinations,
@@ -367,6 +539,8 @@ def main():
     parser.add_argument("--compare-baseline", action="store_true", help="Compare run against saved baseline")
     parser.add_argument("--plot-path", default="calibration_curve.png", help="Path to save reliability diagram")
     parser.add_argument("--no-rewriter", action="store_true", help="Ablation: Disable contextual query rewriter")
+    parser.add_argument("--accuracy-regression-threshold", type=float, default=0.02, help="Allowed absolute accuracy drop before regression failure")
+    parser.add_argument("--hallucination-regression-threshold", type=float, default=0.02, help="Allowed absolute hallucination-rate increase before regression failure")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for determinism")
     args = parser.parse_args()
 
@@ -403,8 +577,13 @@ def main():
 
     # Compare against baseline if requested
     if args.compare_baseline:
-        diff = harness.compare_with_baseline(eval_output["all_results"], baseline_p)
-        if diff["num_regressions"] > 0:
+        diff = harness.compare_with_baseline(
+            eval_output["all_results"],
+            baseline_p,
+            accuracy_regression_threshold=args.accuracy_regression_threshold,
+            hallucination_regression_threshold=args.hallucination_regression_threshold
+        )
+        if diff["status"] == "REGRESSIONS_DETECTED":
             print("\n[!] Regression check failed: prompt or system modifications introduced regressions.")
             sys.exit(1)
         else:

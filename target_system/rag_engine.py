@@ -232,7 +232,7 @@ class QARagSystem:
             # forcing irrelevant passages into the generation window.
             if not self.is_answerable_retrieval(clean_query, search_results):
                 search_results = []
-            retrieved_chunks = [f"[{doc['title']}]: {doc['text']}" for doc, score in search_results]
+            retrieved_chunks = [f"[{doc['id']} | {doc['title']}]: {doc['text']}" for doc, score in search_results]
             retrieved_context = "\n\n".join(retrieved_chunks)
 
         # Step 4: Premise Verification Guardrail
@@ -271,7 +271,10 @@ class QARagSystem:
             "   {\n"
             "     \"reasoning\": \"string explaining how the answer is deduced from context\",\n"
             "     \"extracted_claims\": [\"atomic factual statement 1\", \"atomic factual statement 2\"],\n"
+            "     \"typed_claims\": [{\"type\": \"claim_type\", \"value\": \"verified value\"}],\n"
             "     \"answer\": \"concise final answer string\",\n"
+            "     \"supporting_quote\": \"exact verbatim quote copied from Context or empty string if unanswerable\",\n"
+            "     \"source_doc_id\": \"document id containing supporting_quote or empty string if unanswerable\",\n"
             "     \"confidence_score\": 0.0 to 1.0 numeric float\n"
             "   }\n"
             "2. Do NOT invent or extrapolate facts not present in the context.\n"
@@ -306,7 +309,10 @@ class QARagSystem:
         # Fallback fields if any missing
         reasoning = parsed_json.get("reasoning", "Synthesized from context.")
         extracted_claims = parsed_json.get("extracted_claims", [])
+        typed_claims = parsed_json.get("typed_claims", [])
         answer = parsed_json.get("answer", "")
+        supporting_quote = parsed_json.get("supporting_quote") or ""
+        source_doc_id = parsed_json.get("source_doc_id") or ""
         confidence_score = float(parsed_json.get("confidence_score", 0.85))
         confidence_score = max(0.0, min(1.0, confidence_score))
 
@@ -317,7 +323,10 @@ class QARagSystem:
         return RagResponse(
             reasoning=reasoning,
             extracted_claims=extracted_claims,
+            typed_claims=typed_claims,
             answer=answer,
+            supporting_quote=supporting_quote,
+            source_doc_id=source_doc_id,
             confidence_score=confidence_score,
             rewritten_query=clean_query,
             retrieved_context=retrieved_context

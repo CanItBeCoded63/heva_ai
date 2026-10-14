@@ -1,0 +1,10 @@
+{"id":1,"adversarial_type":"paraphrased","query":"In failure-tolerance terms, what does a five-node Raft deployment survive?","notes":"Hand-authored paraphrase preserving the original Raft failure-tolerance semantics."}
+{"id":2,"adversarial_type":"paraphrased","query":"Restate the election-timeout range specified for Raft leader selection.","notes":"Hand-authored paraphrase for timeout retrieval."}
+{"id":3,"adversarial_type":"paraphrased","query":"Which mechanism keeps Raft log entries ordered consistently across the cluster?","notes":"Hand-authored paraphrase for log replication semantics."}
+{"id":4,"adversarial_type":"paraphrased","query":"For a banking transfer, which commit protocol prevents partial completion across services?","notes":"Hand-authored paraphrase for distributed transaction protocol."}
+{"id":5,"adversarial_type":"paraphrased","query":"Translate the cloud SLA into annual downtime minutes for four-nines availability.","notes":"Hand-authored paraphrase for SLA arithmetic fact."}
+{"id":10,"adversarial_type":"paraphrased","query":"What exact NIST publication defines zero trust architecture principles?","notes":"Hand-authored paraphrase for standards grounding."}
+{"id":20,"adversarial_type":"paraphrased","query":"What were the two burns called in a Hohmann transfer sequence?","notes":"Hand-authored paraphrase for orbital mechanics sequence."}
+{"id":30,"adversarial_type":"paraphrased","query":"How long should clinicians generally wait after stopping fluoxetine before starting an MAOI?","notes":"Hand-authored paraphrase for medical safety interval."}
+{"id":40,"adversarial_type":"paraphrased","query":"Which data structure gives Dijkstra's algorithm its stated sparse-graph running time?","notes":"Hand-authored paraphrase for algorithm complexity support."}
+{"id":61,"adversarial_type":"paraphrased","query":"If older and newer Raft membership guidance disagree, which dated source wins and what method does it recommend?","notes":"Hand-authored temporal precedence paraphrase."}

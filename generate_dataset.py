@@ -152,6 +152,32 @@ CORPUS_DOCS = [
         "id": "doc_algo_05",
         "title": "Bloom Filter Probabilistic Data Structure",
         "text": "A Bloom filter is a space-efficient probabilistic data structure used to test set membership. An empty Bloom filter is a bit array of m bits, all initialized to 0, paired with k independent uniform hash functions. When querying an element, if any of the k hashed bit positions is 0, the element is definitively NOT in the set (zero false negatives). If all k bits are 1, the element is probably in the set, with a tunable false positive probability p approximately equal to (1 - e^(-kn/m))^k."
+    },
+
+    # 6. Temporal Precedence & Version Conflicts (for testing version blindness)
+    {
+        "id": "doc_temp_01",
+        "title": "Raft Consensus - Original 2014 Specification",
+        "text": "The original Raft specification published in 2014 by Diego Ongaro and John Ousterhout defines leader election using randomized timeouts between 150ms and 300ms. The original paper describes a single leader model with log replication as the core mechanism. Pre-election checkpoints are not described in the original 2014 specification."
+    },
+    {
+        "id": "doc_temp_02",
+        "title": "Raft Consensus - 2023 Revised Specification",
+        "text": "The 2023 revised Raft specification maintains backward compatibility with the 2014 original while introducing several enhancements. Leader election timeouts remain randomized between 150ms and 300ms. The 2023 revision adds Pre-Vote (Pre-Election Checkpoint) as a mandatory safety mechanism to prevent disruptive election cycles in partitioned clusters. All deployments after March 2023 must implement Pre-Vote. The 2023 revision supersedes the 2014 original in all respects."
+    },
+    {
+        "id": "doc_temporal_raft_2014",
+        "title": "Raft Membership Change Procedure 2014",
+        "effective_date": "2014-01-01",
+        "superseded_by": "doc_temporal_raft_2023",
+        "text": "The 2014 Raft membership change note recommends single-server membership changes applied one at a time. The older note discourages joint consensus during routine membership updates because operators found it complex to configure manually. This document is superseded by the 2023 Raft membership change addendum."
+    },
+    {
+        "id": "doc_temporal_raft_2023",
+        "title": "Raft Membership Change Procedure 2023 Addendum",
+        "effective_date": "2023-09-01",
+        "supersedes": "doc_temporal_raft_2014",
+        "text": "The 2023 Raft membership change addendum supersedes the 2014 note for safety-critical deployments. The current recommendation is to use joint consensus for membership changes so old and new configurations overlap during the transition. Operators should prefer the 2023 addendum when it conflicts with the 2014 membership change note."
     }
 ]
 
@@ -716,6 +742,62 @@ def generate_ground_truth_test_cases():
             "audit_notes": "Manually verified absent: algorithms corpus covers complexity theory and data structures, not Python runtime internals."
         }
     ]
+
+    doc_by_id = {doc["id"]: doc for doc in CORPUS_DOCS}
+    temporal_context = (
+        doc_by_id["doc_temporal_raft_2014"]["text"]
+        + "\n"
+        + doc_by_id["doc_temporal_raft_2023"]["text"]
+    )
+    test_cases.extend([
+        {
+            "id": 61,
+            "query": "When the 2014 and 2023 Raft membership change documents conflict, which recommendation should operators follow?",
+            "expected_answer": "Operators should follow the 2023 addendum, which recommends joint consensus for membership changes.",
+            "source_context": temporal_context,
+            "domain": "Temporal Conflict",
+            "answer_type": "temporal_conflict",
+            "verification_status": "Human Verified",
+            "audit_notes": "The 2023 addendum explicitly supersedes the 2014 note and should take precedence.",
+            "required_facts": ["2023 addendum supersedes the 2014 note", "use joint consensus for membership changes"],
+            "forbidden_facts": ["single-server membership changes applied one at a time", "discourages joint consensus"],
+            "expected_source_doc_id": "doc_temporal_raft_2023",
+            "expected_supporting_quote": "The current recommendation is to use joint consensus for membership changes so old and new configurations overlap during the transition.",
+            "expected_typed_claims": [{"type": "temporal_precedence", "winning_doc_id": "doc_temporal_raft_2023"}]
+        },
+        {
+            "id": 62,
+            "query": "What is the current Raft membership-change recommendation for safety-critical deployments?",
+            "expected_answer": "The current recommendation is to use joint consensus for membership changes in safety-critical deployments.",
+            "source_context": temporal_context,
+            "domain": "Temporal Conflict",
+            "answer_type": "temporal_conflict",
+            "verification_status": "Human Verified",
+            "audit_notes": "The newer 2023 addendum supersedes the older 2014 note for safety-critical deployments.",
+            "required_facts": ["current recommendation", "joint consensus", "safety-critical deployments"],
+            "forbidden_facts": ["single-server membership changes applied one at a time", "discourages joint consensus"],
+            "expected_source_doc_id": "doc_temporal_raft_2023",
+            "expected_supporting_quote": "The 2023 Raft membership change addendum supersedes the 2014 note for safety-critical deployments.",
+            "expected_typed_claims": [{"type": "temporal_precedence", "winning_doc_id": "doc_temporal_raft_2023"}]
+        }
+    ])
+
+    for case in test_cases:
+        case.setdefault("answer_type", "answerable")
+        case.setdefault("required_facts", [] if case["answer_type"] == "unanswerable" else [case["expected_answer"]])
+        case.setdefault("forbidden_facts", [])
+        case.setdefault("expected_typed_claims", [])
+
+        if case.get("source_context"):
+            source_doc = next((doc for doc in CORPUS_DOCS if doc["text"] in case["source_context"]), None)
+            if source_doc:
+                case.setdefault("expected_source_doc_id", source_doc["id"])
+                first_sentence = source_doc["text"].split(". ")[0].strip()
+                case.setdefault("expected_supporting_quote", first_sentence)
+        else:
+            case.setdefault("expected_source_doc_id", "")
+            case.setdefault("expected_supporting_quote", "")
+
     return test_cases
 
 

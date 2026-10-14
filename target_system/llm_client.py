@@ -266,8 +266,30 @@ class LLMClient:
         # Check for edge case / negative constraints
         has_negative_constraint = "do not" in query.lower() or "never" in query.lower() or "without mentioning" in query.lower()
 
-        # Determine claims and answer based on matching context
-        sentences = [s.strip() for s in re.split(r"[.\n]", context) if len(s.strip()) > 10]
+        # Determine claims and answer based on matching context. Strip retrieval
+        # headers so supporting_quote remains a verbatim span from the document text.
+        context_for_quotes = re.sub(r"\[[^\]]+\]:\s*", "", context)
+        sentences = [s.strip() for s in re.split(r"[.\n]", context_for_quotes) if len(s.strip()) > 10]
+        source_doc_id = ""
+        doc_match = re.search(r"\[([^\]|]+)\s*\|", context)
+        if doc_match:
+            source_doc_id = doc_match.group(1).strip()
+
+        def build_typed_claims(text: str) -> list:
+            typed = []
+            lowered = text.lower()
+            if "raft" in lowered and "2" in text and "failure" in lowered:
+                typed.append({"type": "raft_failure_tolerance", "value": "2"})
+            if "150" in text and "300" in text and "timeout" in lowered:
+                typed.append({"type": "raft_election_timeout_ms", "min": "150", "max": "300"})
+            if "52.6" in text and "downtime" in lowered:
+                typed.append({"type": "availability_downtime_minutes_per_year", "value": "52.6"})
+            for number in re.findall(r"\d[\d,]*\.?\d*%?", text)[:2]:
+                if not any(number in json.dumps(item) for item in typed):
+                    typed.append({"type": "numeric_fact", "value": number})
+            if not typed and text:
+                typed.append({"type": "grounded_text_fact", "value": text[:80]})
+            return typed
         
         # Calculate a deterministic pseudo-seed for confidence
         q_hash = int(hashlib.sha256(query.encode("utf-8")).hexdigest(), 16)
@@ -282,6 +304,8 @@ class LLMClient:
                 f"The context provided historical background consistent with the inquiry."
             ]
             answer = f"According to the premise, the event occurred as indicated in the historical records."
+            supporting_quote = ""
+            typed_claims = build_typed_claims(answer)
             confidence = 0.72 + confidence_offset  # Deterministic but spread across upper bins.
         elif has_negative_constraint:
             # Model exhibits constraint violation failure
@@ -291,6 +315,8 @@ class LLMClient:
                 sentences[1] if len(sentences) > 1 else "All conditions are documented in the specification."
             ]
             answer = f"{claims[0]} Furthermore, {claims[1] if len(claims) > 1 else ''}"
+            supporting_quote = sentences[0] if sentences else ""
+            typed_claims = build_typed_claims(answer)
             confidence = 0.58 + confidence_offset
         elif sentences:
             # Grounded answer
@@ -299,17 +325,25 @@ class LLMClient:
             if len(sentences) > 1:
                 claims.append(sentences[1])
             answer = " ".join(claims)
+            supporting_quote = sentences[0]
+            typed_claims = build_typed_claims(answer)
             confidence = 0.76 + confidence_offset
         else:
             reasoning = "Insufficient context retrieved from the knowledge corpus."
             claims = ["The retrieved context does not contain enough information to answer the inquiry."]
             answer = "The retrieved context does not contain sufficient information to answer the inquiry."
+            supporting_quote = ""
+            source_doc_id = ""
+            typed_claims = [{"type": "insufficient_information"}]
             confidence = 0.18 + (((q_hash // 1000) % 1000) / 1000.0) * 0.27
 
         output = {
             "reasoning": reasoning,
             "extracted_claims": claims,
+            "typed_claims": typed_claims,
             "answer": answer,
+            "supporting_quote": supporting_quote,
+            "source_doc_id": source_doc_id,
             "confidence_score": round(confidence, 3)
         }
         return json.dumps(output, indent=2)
