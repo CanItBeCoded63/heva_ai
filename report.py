@@ -37,6 +37,9 @@ def generate_markdown_report(eval_data: Dict[str, Any], output_path: str = "EVAL
     top_bin_conf = top_conf_bin.get("confidence", mean_conf)
     top_bin_acc = top_conf_bin.get("accuracy", overall_acc)
 
+    first_suite_size = next((stats.get("total", 0) for stats in suites.values()), 0)
+    adversarial_cases = max(total_cases - first_suite_size, 0)
+
     # Format suite breakdown table
     suite_rows = []
     for s_name, stats in suites.items():
@@ -122,7 +125,7 @@ def generate_markdown_report(eval_data: Dict[str, Any], output_path: str = "EVAL
 
 ## 2. Accuracy & Hallucination Breakdown by Input Category
 
-The evaluation suite benchmarked the target system across clean inputs and 4 distinct adversarial mutation vectors (55 cases per category = 275 total cases):
+The evaluation suite benchmarked the target system across clean inputs and 4 distinct adversarial mutation vectors ({first_suite_size} cases per category = {total_cases} total cases, including answerable and unanswerable probes):
 
 | Input Category | Sample Size | Accuracy | Hallucination Rate | Resilience Profile |
 | :--- | :---: | :---: | :---: | :--- |
@@ -208,7 +211,7 @@ The evaluation harness implements stateful differential tracking via `runner.py 
 ## 9. Limitations, Blind Spots & Brutally Honest Weaknesses
 
 In accordance with strict evaluation honesty standards:
-1. **Independent Double-Blind Ground-Truth Verification:** While all 55 test cases were verified against canonical technical textbooks (CLRS, Lamport Raft, NIST SP 800-207, FDA GCP), an independent second-party cross-validation pass is recommended before mission-critical deployment.
+1. **Independent Double-Blind Ground-Truth Verification:** While all {first_suite_size} test cases were verified against canonical technical textbooks, standards, corpus absence checks, and human audit notes, an independent second-party cross-validation pass is recommended before mission-critical deployment.
 2. **Scoring Heuristic Nuance:** While our hybrid hallucination detector combines symbolic numeric/date containment with semantic NLI judges, subtle semantic negations (e.g. "at least 15%" vs "at most 15%") where numbers match can occasionally pass purely symbolic filters.
 3. **Bimodal Calibration Gap:** The model does not produce well-spread calibrated confidence scores; post-hoc Platt scaling or isotonic regression on a held-out set is strictly required before exposing confidence scores to users.
 4. **Synthetic Adversarial Boundary:** Our 4 mutation operators stress-test semantic, syntactic, and structural robustness, but do not simulate multi-turn adversarial prompt injections.

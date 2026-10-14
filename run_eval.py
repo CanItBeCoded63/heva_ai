@@ -68,7 +68,8 @@ def run_full_pipeline(seed: int = 42, no_rewriter: bool = False):
     )
 
     # 4. Run evaluation
-    print("\n[Step 4/5] Executing evaluation across all 5 test suites (275 total evaluations)...")
+    total_evals = sum(len(cases) for cases in suites.values())
+    print(f"\n[Step 4/5] Executing evaluation across all 5 test suites ({total_evals} total evaluations)...")
     eval_output = harness.run_full_evaluation(suites, plot_path=plot_p)
 
     # Save baseline snapshot

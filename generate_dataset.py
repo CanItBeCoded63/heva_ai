@@ -1,7 +1,8 @@
 """
 Ground Truth Dataset Generation and Scaffolding Script.
 
-Generates 55 rigorously verified test cases across 5 technical domains:
+Generates 60 rigorously verified test cases across 5 technical domains plus
+unanswerable out-of-corpus probes:
 1. Distributed Systems & Consensus
 2. Enterprise Cloud Architecture & Reliability
 3. Aerospace Engineering & Physics
@@ -155,7 +156,7 @@ CORPUS_DOCS = [
 ]
 
 
-# Generate 55 Ground Truth Test Cases (11 per domain)
+# Generate 60 Ground Truth Test Cases (55 answerable + 5 unanswerable)
 def generate_ground_truth_test_cases():
     test_cases = [
         # Distributed Systems (1-11)
@@ -661,6 +662,58 @@ def generate_ground_truth_test_cases():
             "domain": "Algorithms",
             "verification_status": "Human Verified",
             "audit_notes": "NP-completeness definition verified."
+        },
+
+        # Unanswerable probes (56-60): verified absent from the corpus by manual corpus review
+        {
+            "id": 56,
+            "query": "What was the exact launch date of the first Kubernetes release candidate?",
+            "expected_answer": "The corpus does not contain enough information to answer this question.",
+            "source_context": "",
+            "domain": "Unanswerable",
+            "answer_type": "unanswerable",
+            "verification_status": "Human Verified",
+            "audit_notes": "Manually verified absent: corpus discusses cloud reliability patterns, not Kubernetes release history."
+        },
+        {
+            "id": 57,
+            "query": "Which encryption mode does TLS 1.3 require for ChaCha20-Poly1305 record protection?",
+            "expected_answer": "The corpus does not contain enough information to answer this question.",
+            "source_context": "",
+            "domain": "Unanswerable",
+            "answer_type": "unanswerable",
+            "verification_status": "Human Verified",
+            "audit_notes": "Manually verified absent: corpus mentions mTLS only as a Zero Trust control, not TLS 1.3 cipher internals."
+        },
+        {
+            "id": 58,
+            "query": "What is the recommended dose adjustment for vancomycin in stage 4 chronic kidney disease?",
+            "expected_answer": "The corpus does not contain enough information to answer this question.",
+            "source_context": "",
+            "domain": "Unanswerable",
+            "answer_type": "unanswerable",
+            "verification_status": "Human Verified",
+            "audit_notes": "Manually verified absent: pharmacology corpus covers trial phases, half-life, antibodies, blinding, and therapeutic index, not vancomycin dosing."
+        },
+        {
+            "id": 59,
+            "query": "What is the Crew Dragon trunk solar array power output in kilowatts?",
+            "expected_answer": "The corpus does not contain enough information to answer this question.",
+            "source_context": "",
+            "domain": "Unanswerable",
+            "answer_type": "unanswerable",
+            "verification_status": "Human Verified",
+            "audit_notes": "Manually verified absent: aerospace corpus covers orbital mechanics and entry physics, not Crew Dragon hardware specifications."
+        },
+        {
+            "id": 60,
+            "query": "Which garbage collection algorithm does CPython use for cyclic reference cleanup?",
+            "expected_answer": "The corpus does not contain enough information to answer this question.",
+            "source_context": "",
+            "domain": "Unanswerable",
+            "answer_type": "unanswerable",
+            "verification_status": "Human Verified",
+            "audit_notes": "Manually verified absent: algorithms corpus covers complexity theory and data structures, not Python runtime internals."
         }
     ]
     return test_cases

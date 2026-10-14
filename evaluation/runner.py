@@ -45,7 +45,8 @@ def check_answer_accuracy(
     model_answer: str,
     expected_answer: str,
     adv_type: str,
-    is_hallucination: bool
+    is_hallucination: bool,
+    answer_type: str = "answerable"
 ) -> bool:
     """
     Evaluates whether the model answer satisfies ground truth.
@@ -56,6 +57,14 @@ def check_answer_accuracy(
     """
     if is_hallucination:
         return False
+
+    if answer_type == "unanswerable" or adv_type == "unanswerable":
+        refusal_keywords = [
+            "does not contain", "not contain", "not available", "insufficient",
+            "cannot answer", "can't answer", "not enough information", "not provided",
+            "not in the corpus", "not in the context", "no information", "unable to answer"
+        ]
+        return any(kw in model_answer.lower() for kw in refusal_keywords)
 
     if adv_type == "subtle_error":
         # On subtle errors, the answer must refute or challenge the premise.
@@ -147,6 +156,7 @@ class EvaluationHarness:
             expected_answer = case.get("expected_answer", "")
             source_context = case.get("source_context", "")
             adv_type = case.get("adversarial_type", suite_name)
+            answer_type = case.get("answer_type", "answerable")
 
             # Query target system
             req = QueryRequest(query=query_text)
@@ -163,13 +173,15 @@ class EvaluationHarness:
                 model_answer=response.answer,
                 expected_answer=expected_answer,
                 adv_type=adv_type,
-                is_hallucination=is_hallucinated
+                is_hallucination=is_hallucinated,
+                answer_type=answer_type
             )
 
             record = {
                 "id": case.get("id", i + 1),
                 "suite": suite_name,
                 "adversarial_type": adv_type,
+                "answer_type": answer_type,
                 "query": query_text,
                 "expected_answer": expected_answer,
                 "model_answer": response.answer,

@@ -48,7 +48,8 @@ log(f"  Model    : {client.model_name}")
 log("\n=== STEP 2: Verifying Dataset & Corpus ===")
 if not os.path.exists(dataset_p):
     scaffold_dataset()
-log(f"  dataset.jsonl  : OK (55 cases)")
+dataset_count = sum(1 for line in open(dataset_p, encoding="utf-8") if line.strip())
+log(f"  dataset.jsonl  : OK ({dataset_count} cases)")
 log(f"  corpus.json    : OK (25 documents)")
 
 log("\n=== STEP 3: Building Adversarial Suites ===")
@@ -60,7 +61,8 @@ log("\n=== STEP 4: Initializing Harness & FAISS Index ===")
 harness = EvaluationHarness(corpus_path=corpus_p, seed=42, enable_query_rewriter=True)
 log("  FAISS index built. Query rewriter: ENABLED")
 
-log("\n=== STEP 5: Running All 5 Test Suites (275 total evaluations) ===")
+total_evals = sum(len(cases) for cases in suites.values())
+log(f"\n=== STEP 5: Running All 5 Test Suites ({total_evals} total evaluations) ===")
 suite_reports = {}
 all_results   = []
 all_confidences = []

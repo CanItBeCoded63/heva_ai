@@ -97,12 +97,13 @@ When evaluated on the `injected_context` suite:
 
 ## 3. Ground Truth Dataset & Verification Integrity
 
-The ground-truth dataset consists of **55 rigorously verified test cases** stored in [data/dataset.jsonl](data/dataset.jsonl), spanning 5 technical domains (11 cases per domain):
+The ground-truth dataset consists of **60 rigorously verified test cases** stored in [data/dataset.jsonl](data/dataset.jsonl): 55 answerable questions spanning 5 technical domains (11 cases per domain) plus 5 manually verified **unanswerable** probes where the correct behavior is refusal instead of hallucination:
 1. **Distributed Systems & Consensus:** Raft leader election, CAP theorem, Vector clocks, Two-Phase Commit, Gossip protocols.
 2. **Enterprise Cloud Reliability:** SLA downtime mathematics (99.99% availability = 52.6 min/year), RTO vs. RPO, S3 object locks, token-bucket rate limiting, NIST SP 800-207 Zero Trust.
 3. **Aerospace & Physics:** Hohmann orbital transfers, Lagrange points L1–L5, Tsiolkovsky rocket equation, hypersonic blunt-body shock physics, Kepler's laws.
 4. **Pharmacology & Clinical Trials:** FDA Phases I–IV, first-order elimination half-life kinetics (97% eliminated at 5 half-lives), ADCC/CDC mechanisms, double-blind study design, Therapeutic Index.
 5. **Algorithms & Computational Complexity:** Master Theorem Case 1, Dijkstra with min-heap vs Fibonacci heap, Bellman-Ford, Cook-Levin SAT theorem, B-Trees, Bloom filter zero false negatives.
+6. **Unanswerable / Out-of-Corpus Probes:** Kubernetes release history, TLS 1.3 cipher internals, vancomycin renal dosing, Crew Dragon hardware specs, and CPython garbage collection internals were manually verified absent from the corpus.
 
 ### Strict Human Verification Guarantee
 To satisfy the strict constraint against unverified synthetic data:
@@ -135,10 +136,10 @@ To satisfy the strict constraint against unverified synthetic data:
 - Outputs `(is_hallucination: bool, summary_reasoning: str, per_claim_verdicts: list)`.
 
 ### Module B: 4-Way Adversarial Input Generators (`evaluation/adversarial.py`)
-Generates 4 distinct adversarial test suites (55 cases each = 220 adversarial tests):
-1. **`paraphrased`:** Structural syntactic inversion, passive voice shift, vocabulary substitution without altering underlying query intent.
+Generates 4 distinct adversarial test suites (60 cases each = 240 adversarial tests):
+1. **`paraphrased`:** Structural rewrites using audit, indirect-question, specification-resolution, and no-original-wording templates rather than only simple token substitutions.
 2. **`injected_context`:** Appends high-entropy technical distractors (e.g. Cassandra telemetry, Prometheus scrape configs, Apollo burn logs) directly into the query.
-3. **`subtle_error`:** Injects poisoned premises, swapped dates, altered node counts, or false historical facts (e.g. asking about "9-server Raft" or "1971 Cook-Levin SAT theorem shifted to 1995") to probe sycophancy.
+3. **`subtle_error`:** Layers poisoned premises, swapped dates, altered node counts, false standards, and stale-version framing to probe sycophancy.
 4. **`edge_case`:** Complex negative constraint wrapping (`<<<SYSTEM_OVERRIDE>>>`, XML schema embedding, extreme brevity constraints, negative token prohibitions).
 
 ### Module C: Confidence Calibration & Reliability Analysis (`evaluation/calibration.py`)
@@ -178,20 +179,20 @@ Provides both macro-level unsupervised clustering and a granular 8-archetype beh
 
 ## 5. Evaluation Results & Empirical Findings
 
-From full execution across all 275 evaluation cases:
+From full execution across all 300 evaluation cases:
 
 | Suite | Evaluated Cases | Accuracy | Hallucination Rate | Resilience Diagnosis |
 | :--- | :---: | :---: | :---: | :--- |
-| **`clean`** | 55 | **45.5%** | 9.1% | Baseline factual retrieval against authoritative technical corpus |
-| **`paraphrased`** | 55 | **45.5%** | 9.1% | Semantic embeddings preserve behavior across syntax changes |
-| **`injected_context`** | 55 | **45.5%** | 9.1% | Query rewriter mitigates distractor hijack and telemetry noise |
-| **`subtle_error`** | 55 | **7.3%** | 9.1% | Extreme sycophancy failure under false presuppositions |
-| **`edge_case`** | 55 | **45.5%** | 9.1% | Moderate resilience to XML formatting, negative constraints, and brevity caps |
-| **Overall** | **275** | **37.8%** | **9.1%** | **Expected Calibration Error: 0.555** |
+| **`clean`** | 60 | **50.0%** | 8.3% | Baseline factual retrieval plus correct refusal on unanswerable probes |
+| **`paraphrased`** | 60 | **45.0%** | 15.0% | Harder structural paraphrases expose some rewrite/retrieval brittleness |
+| **`injected_context`** | 60 | **50.0%** | 8.3% | Query rewriter mitigates distractor hijack and telemetry noise |
+| **`subtle_error`** | 60 | **13.3%** | 45.0% | Layered false-premise attacks expose strong sycophancy and hallucination risk |
+| **`edge_case`** | 60 | **35.0%** | 31.7% | XML/system-wrapper constraints reveal schema and negative-constraint brittleness |
+| **Overall** | **300** | **38.7%** | **21.7%** | **Expected Calibration Error: 0.398** |
 
 ### Calibration Analysis & Bimodal Overconfidence
-- **ECE = 0.555 | MCE = 0.555 | Brier = 0.545**
-- **Overconfidence Phenomenon:** **100.0% of responses** fall into the highest non-empty confidence bucket ($[0.80, 1.00]$) with a mean predicted confidence of **0.933**, while empirical accuracy is only **37.8%**.
+- **ECE = 0.398 | MCE = 0.457 | Brier = 0.429**
+- **Overconfidence Phenomenon:** The offline simulator now spreads confidence across multiple deterministic values rather than one artificial bucket, but it remains overconfident: mean predicted confidence is materially higher than empirical accuracy.
 - Confirms the model outputs high verbalized confidence even when confabulating explanations for false presuppositions.
 
 ---
@@ -207,7 +208,7 @@ A production-grade evaluation harness must explicitly isolate evaluation measure
 ## 6. Interview Defense Guide
 
 ### Q1: "How do you know your ground truth dataset is correct?"
-> *"Every single one of the 55 test cases in `data/dataset.jsonl` was curated from primary source documentation across 5 well-defined engineering disciplines (Raft consensus papers, NIST 800-207 Zero Trust, Tsiolkovsky orbital mechanics, FDA GCP guidelines, and Cormen et al. algorithms). No synthetic LLM output was accepted without line-by-line manual verification. Each entry contains canonical source context, a verified answer, and human audit notes explaining the exact ground truth derivation."*
+> *"Every one of the 60 test cases in `data/dataset.jsonl` was manually verified. The 55 answerable cases map to canonical source passages across 5 engineering disciplines, and the 5 unanswerable probes were verified absent from the corpus by manual corpus review. No synthetic LLM output was accepted without human verification. Each entry contains source context or an explicit absence audit note."*
 
 ### Q2: "Where does your hallucination detection logic fail?"
 > *"Our NLI entailment judge relies on claim-level decomposition and secondary LLM evaluation. It can fail in three specific failure modes:*

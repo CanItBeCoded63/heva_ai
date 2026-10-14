@@ -95,7 +95,18 @@ def check_numeric_date_entailment(claim: str, source_text: str) -> Tuple[bool, O
     Layer 2: Symbolic numeric and temporal entity containment check.
     Ensures numbers and months in claim are grounded in source text.
     """
-    if not claim or not source_text:
+    if not claim:
+        return False, "Empty claim or source text."
+
+    refusal_markers = [
+        "not contain enough information", "does not contain enough information",
+        "retrieved context does not contain", "not available in the indexed corpus",
+        "insufficient information", "cannot answer", "not in the corpus"
+    ]
+    if not source_text and any(marker in claim.lower() for marker in refusal_markers):
+        return True, None
+
+    if not source_text:
         return False, "Empty claim or source text."
 
     claim_nums = extract_numbers(claim)
@@ -203,6 +214,18 @@ class HallucinationDetector:
 
         for claim in output_claims:
             if not claim.strip():
+                continue
+            if not source_context and any(marker in claim.lower() for marker in [
+                "not contain enough information", "does not contain enough information",
+                "retrieved context does not contain", "not available in the indexed corpus",
+                "insufficient information", "cannot answer", "not in the corpus"
+            ]):
+                claim_verdicts.append({
+                    "claim": claim,
+                    "entailed": True,
+                    "is_hallucination": False,
+                    "reasoning": "Correct refusal on an unanswerable case with no supporting source context."
+                })
                 continue
             verdict = self.verify_single_claim(claim, source_context)
             claim_verdicts.append(verdict)

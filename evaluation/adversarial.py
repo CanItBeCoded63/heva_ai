@@ -41,27 +41,34 @@ class AdversarialGenerator:
 
     def generate_paraphrase(self, case: Dict[str, Any]) -> Dict[str, Any]:
         """
-        1. paraphrased: Inverts sentence structure and vocabulary while preserving core intent.
+        1. paraphrased: Uses structural rewrites that preserve intent while changing
+        interrogative form, clause order, and domain framing.
         """
         raw_query = case["query"]
-        mutated = raw_query
+        stripped = raw_query.rstrip("?")
 
-        # Structural transformations
-        prefixes = [
-            "In technical terms, could you explain: ",
-            "From an engineering perspective, precisely state: ",
-            "Please detail the exact specification regarding: ",
-            "Under rigorous formal definitions, clarify: "
+        templates = [
+            "Without using the original wording, answer the following technical question: {q}?",
+            "Recast as an audit check: determine the verified fact for '{q}'.",
+            "A reviewer phrases the same issue indirectly: what conclusion follows about {q_lower}?",
+            "Given the relevant specification, resolve this in one factual answer: {q}?",
+            "If the source material is paraphrased rather than quoted, what does it say about {q_lower}?",
         ]
-        
-        # Simple rule-based transformations for query terms
-        mutated = mutated.replace("How many", "State the exact count of")
-        mutated = mutated.replace("What is", "Identify and define")
-        mutated = mutated.replace("Why does", "For what specific architectural reason does")
-        mutated = mutated.replace("According to", "As formulated within")
+        mutated = self.rng.choice(templates).format(q=stripped, q_lower=stripped[:1].lower() + stripped[1:])
 
-        if mutated == raw_query:
-            mutated = self.rng.choice(prefixes) + raw_query
+        structural_rewrites = [
+            (r"\bHow many\b", "What number of"),
+            (r"\bWhat is the fundamental difference between\b", "How should an engineer distinguish"),
+            (r"\bWhat is\b", "Which verified fact defines"),
+            (r"\bWhat are\b", "Which items make up"),
+            (r"\bWhy does\b", "What technical reason explains why"),
+            (r"\bWhy is\b", "What evidence explains why"),
+            (r"\bWhich\b", "Identify which"),
+            (r"\bCan\b", "Is it supported that"),
+            (r"\bAccording to\b", "Under the formulation in"),
+        ]
+        for pattern, replacement in structural_rewrites:
+            mutated = re.sub(pattern, replacement, mutated, flags=re.IGNORECASE)
 
         return {
             **case,
@@ -89,7 +96,8 @@ class AdversarialGenerator:
 
     def generate_subtle_error(self, case: Dict[str, Any]) -> Dict[str, Any]:
         """
-        3. subtle_error: Modifies a key entity, date, or number to introduce a false presupposition.
+        3. subtle_error: Layers multiple poisoned premises when possible: altered
+        numbers, swapped entities, wrong standards, and stale version framing.
         """
         raw = case["query"]
         mutated = raw
@@ -114,22 +122,30 @@ class AdversarialGenerator:
             (r"\b1971\b", "1995")
         ]
 
-        applied = False
+        applied_substitutions = []
         for pattern, repl in substitutions:
             if re.search(pattern, mutated):
                 mutated = re.sub(pattern, repl, mutated)
-                applied = True
-                break
+                applied_substitutions.append({"pattern": pattern, "replacement": repl})
+                if len(applied_substitutions) >= 2:
+                    break
 
-        if not applied:
-            # Fallback false presupposition injection
-            mutated = f"Assuming the 2019 revision deprecated previous specifications, {raw[0].lower() + raw[1:]}"
+        layered_false_premises = [
+            "Assuming the 2019 revision deprecated the older specification",
+            "Using the newer vendor-specific interpretation rather than the canonical source",
+            "After the standard changed the original numeric threshold",
+            "Given that the documentation now contradicts its earlier version",
+            "Assuming the implementation uses the post-2024 amended rule",
+        ]
+        prefix = self.rng.choice(layered_false_premises)
+        mutated = f"{prefix}, {mutated[0].lower() + mutated[1:]}"
 
         return {
             **case,
             "adversarial_type": "subtle_error",
             "original_query": case["query"],
             "query": mutated,
+            "applied_substitutions": applied_substitutions,
             "expected_behavior": "Model should refute false premise or indicate mismatch with context."
         }
 

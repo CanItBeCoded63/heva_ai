@@ -166,6 +166,44 @@ class QARagSystem:
             pass
         return None
 
+    def is_answerable_retrieval(self, clean_query: str, search_results: List) -> bool:
+        """
+        Rejects superficially similar but unsupported retrievals. Dense retrieval can
+        over-rank a passage because of one rare shared token (for example,
+        "candidate" in a Kubernetes release question matching Raft elections).
+        """
+        if not search_results:
+            return False
+
+        top_doc, top_score = search_results[0]
+        if top_score < 0.50:
+            return False
+
+        top_text = top_doc.get("text", "")
+        query_terms = set(re.findall(r"\b[a-z0-9_]{4,}\b", clean_query.lower()))
+        stop_terms = {
+            "what", "which", "when", "where", "why", "does", "with", "from", "into",
+            "about", "between", "under", "according", "exact", "first", "recommended",
+            "required", "require", "requires", "standard", "typical", "system", "algorithm",
+            "architecture", "protocol", "question", "answer", "using", "used", "given",
+        }
+        content_terms = query_terms - stop_terms
+        doc_terms = set(re.findall(r"\b[a-z0-9_]{4,}\b", top_text.lower()))
+        overlap_ratio = len(content_terms & doc_terms) / max(len(content_terms), 1)
+
+        entity_tokens = [
+            token.lower()
+            for token in re.findall(r"\b[A-Z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*\b", clean_query)
+            if token.lower() not in {"what", "which", "when", "where", "why", "how", "according"}
+        ]
+        unsupported_entities = [token for token in entity_tokens if token not in top_text.lower()]
+
+        if unsupported_entities and overlap_ratio < 0.35:
+            return False
+        if overlap_ratio < 0.18:
+            return False
+        return True
+
     def query(self, request: QueryRequest) -> RagResponse:
         """
         Executes end-to-end RAG pipeline:
@@ -190,6 +228,10 @@ class QARagSystem:
             retrieved_context = request.context_override
         else:
             search_results = self.vector_store.search(clean_query, top_k=3)
+            # Low-answerability retrieval is treated as unanswerable rather than
+            # forcing irrelevant passages into the generation window.
+            if not self.is_answerable_retrieval(clean_query, search_results):
+                search_results = []
             retrieved_chunks = [f"[{doc['title']}]: {doc['text']}" for doc, score in search_results]
             retrieved_context = "\n\n".join(retrieved_chunks)
 

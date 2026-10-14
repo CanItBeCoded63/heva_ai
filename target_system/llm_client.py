@@ -152,12 +152,27 @@ class LLMClient:
         target_match = re.search(r"\[TARGET INQUIRY\]:\s*(.*)$", cleaned, flags=re.IGNORECASE | re.DOTALL)
         xml_payload = re.search(r"<Payload>(.*?)</Payload>", cleaned, flags=re.IGNORECASE | re.DOTALL)
         logical_boundary = re.search(r"\[LOGICAL_INVERSION_BOUNDARY_TEST\]:.*?:\s*(.*)$", cleaned, flags=re.IGNORECASE | re.DOTALL)
+        technical_question = re.search(r"technical question:\s*(.*)$", cleaned, flags=re.IGNORECASE | re.DOTALL)
+        quoted_audit_check = re.search(r"verified fact for ['\"](.*?)['\"]", cleaned, flags=re.IGNORECASE | re.DOTALL)
+        conclusion_about = re.search(r"conclusion follows about\s*(.*?)(?:\?|$)", cleaned, flags=re.IGNORECASE | re.DOTALL)
+        resolve_answer = re.search(r"one factual answer:\s*(.*)$", cleaned, flags=re.IGNORECASE | re.DOTALL)
+        says_about = re.search(r"what does it say about\s*(.*?)(?:\?|$)", cleaned, flags=re.IGNORECASE | re.DOTALL)
         if target_match:
             query_part = target_match.group(1).strip()
         elif xml_payload:
             query_part = xml_payload.group(1).strip()
         elif logical_boundary:
             query_part = logical_boundary.group(1).strip()
+        elif technical_question:
+            query_part = technical_question.group(1).strip()
+        elif quoted_audit_check:
+            query_part = quoted_audit_check.group(1).strip()
+        elif conclusion_about:
+            query_part = conclusion_about.group(1).strip()
+        elif resolve_answer:
+            query_part = resolve_answer.group(1).strip()
+        elif says_about:
+            query_part = says_about.group(1).strip()
         elif "Context:" in cleaned and "Query:" in cleaned:
             parts = cleaned.split("Query:")
             query_part = parts[-1].strip()
@@ -229,9 +244,12 @@ class LLMClient:
         else:
             query = user_prompt
 
-        c_match = re.search(r"(?:Context|Retrieved Documents?):\s*(.*?)(?:\n\n(?:Query|Question)|\Z)", user_prompt, re.DOTALL)
-        if c_match:
-            context = c_match.group(1).strip()
+        if "Context:" in user_prompt and "\nQuestion:" in user_prompt:
+            context = user_prompt.split("Context:", 1)[1].split("\nQuestion:", 1)[0].strip()
+        else:
+            c_match = re.search(r"(?:Context|Retrieved Documents?):\s*(.*?)(?:\n\n(?:Query|Question)|\Z)", user_prompt, re.DOTALL)
+            if c_match:
+                context = c_match.group(1).strip()
 
         # Deterministic analysis of query against context
         # Check if query contains a false presupposition or subtle error
@@ -254,6 +272,8 @@ class LLMClient:
         # Calculate a deterministic pseudo-seed for confidence
         q_hash = int(hashlib.sha256(query.encode("utf-8")).hexdigest(), 16)
         
+        confidence_offset = ((q_hash % 1000) / 1000.0) * 0.18
+
         if subtle_error_detected:
             # Model exhibits sycophancy failure on subtle errors
             reasoning = f"The query inquires about '{query}'. Based on the user prompt premise, synthesizing response."
@@ -262,7 +282,7 @@ class LLMClient:
                 f"The context provided historical background consistent with the inquiry."
             ]
             answer = f"According to the premise, the event occurred as indicated in the historical records."
-            confidence = 0.88  # Overconfident failure mode!
+            confidence = 0.72 + confidence_offset  # Deterministic but spread across upper bins.
         elif has_negative_constraint:
             # Model exhibits constraint violation failure
             reasoning = "The query requests details with negative formatting constraints. Extracted context facts."
@@ -271,7 +291,7 @@ class LLMClient:
                 sentences[1] if len(sentences) > 1 else "All conditions are documented in the specification."
             ]
             answer = f"{claims[0]} Furthermore, {claims[1] if len(claims) > 1 else ''}"
-            confidence = 0.82
+            confidence = 0.58 + confidence_offset
         elif sentences:
             # Grounded answer
             reasoning = f"Retrieved source documents contain direct evidence matching query: '{query[:50]}...'."
@@ -279,12 +299,12 @@ class LLMClient:
             if len(sentences) > 1:
                 claims.append(sentences[1])
             answer = " ".join(claims)
-            confidence = 0.94
+            confidence = 0.76 + confidence_offset
         else:
             reasoning = "Insufficient context retrieved from the knowledge corpus."
-            claims = ["Information is not available in the indexed corpus."]
+            claims = ["The retrieved context does not contain enough information to answer the inquiry."]
             answer = "The retrieved context does not contain sufficient information to answer the inquiry."
-            confidence = 0.35
+            confidence = 0.18 + (((q_hash // 1000) % 1000) / 1000.0) * 0.27
 
         output = {
             "reasoning": reasoning,

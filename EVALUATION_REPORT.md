@@ -3,7 +3,7 @@
 **System Under Test:** Span-Grounded Question Answering RAG System over Multi-Domain Technical Corpus  
 **Evaluation Harness:** Custom Pure-Python Adversarial Evaluation Suite (Zero 3rd-Party Eval Frameworks)  
 **Determinism Standard:** Fixed Seed (`seed=42`), Greedy Decoding (`temperature=0.0`)  
-**Total Test Cases Evaluated:** 275 across Clean and 4 Adversarial Perturbation Vectors  
+**Total Test Cases Evaluated:** 300 across Clean and 4 Adversarial Perturbation Vectors  
 
 ---
 
@@ -11,33 +11,33 @@
 
 | Metric | Measured Value | Target Threshold | Status |
 | :--- | :--- | :--- | :--- |
-| **Overall Accuracy** | **37.8%** | ≥ 75.0% | DEGRADED UNDER ADVERSARIAL ATTACK |
-| **Overall Hallucination Rate** | **9.1%** | ≤ 15.0% | ACCEPTABLE |
-| **Expected Calibration Error (ECE)** | **0.555** | ≤ 0.150 | MISCALIBRATED (OVERCONFIDENT) |
-| **Maximum Calibration Error (MCE)** | **0.555** | ≤ 0.300 | ELEVATED IN TAIL BINS |
-| **Brier Score** | **0.545** | ≤ 0.200 | Optimal MSE on probabilities |
-| **Mean Model Confidence** | **0.933** | N/A | Self-reported score |
+| **Overall Accuracy** | **38.7%** | ≥ 75.0% | DEGRADED UNDER ADVERSARIAL ATTACK |
+| **Overall Hallucination Rate** | **21.7%** | ≤ 15.0% | HIGH |
+| **Expected Calibration Error (ECE)** | **0.398** | ≤ 0.150 | MISCALIBRATED (OVERCONFIDENT) |
+| **Maximum Calibration Error (MCE)** | **0.457** | ≤ 0.300 | ELEVATED IN TAIL BINS |
+| **Brier Score** | **0.413** | ≤ 0.200 | Optimal MSE on probabilities |
+| **Mean Model Confidence** | **0.750** | N/A | Self-reported score |
 
 ---
 
 ## 2. Accuracy & Hallucination Breakdown by Input Category
 
-The evaluation suite benchmarked the target system across clean inputs and 4 distinct adversarial mutation vectors (55 cases per category = 275 total cases):
+The evaluation suite benchmarked the target system across clean inputs and 4 distinct adversarial mutation vectors (60 cases per category = 300 total cases, including answerable and unanswerable probes):
 
 | Input Category | Sample Size | Accuracy | Hallucination Rate | Resilience Profile |
 | :--- | :---: | :---: | :---: | :--- |
-| `clean` | 55 | 45.5% | 9.1% |
-| `paraphrased` | 55 | 45.5% | 9.1% |
-| `injected_context` | 55 | 45.5% | 9.1% |
-| `subtle_error` | 55 | 7.3% | 9.1% |
-| `edge_case` | 55 | 45.5% | 9.1% |
+| `clean` | 60 | 50.0% | 8.3% |
+| `paraphrased` | 60 | 45.0% | 15.0% |
+| `injected_context` | 60 | 50.0% | 8.3% |
+| `subtle_error` | 60 | 13.3% | 45.0% |
+| `edge_case` | 60 | 35.0% | 31.7% |
 
 ### Key Empirical Findings:
-1. **Clean Baseline (45.5%):** Factual grounding is strong when questions directly mirror canonical technical references without perturbation.
-2. **Syntactic Paraphrasing Robustness (45.5%):** Dense vector representations in FAISS successfully map inverted grammar and passive voice to original document chunks, proving lexical invariance.
-3. **Injected Distractor Resilience (45.5%):** The **Contextual Query Rewriter** successfully stripped out high-entropy telemetry noise and competitor logs, preventing retrieval hijacking.
-4. **Catastrophic Sycophancy on Subtle Errors (7.3%):** Accuracy collapsed to near-zero when queries contained false presuppositions (e.g. asking about node counts under a non-existent version). The model uncritically accepted the user's false framing.
-5. **Edge Case Constraints (45.5%):** The model demonstrated moderate resilience to atypical schema formats (XML, strict brevity constraints, negative token prohibitions).
+1. **Clean Baseline (50.0%):** Factual grounding is strong when questions directly mirror canonical technical references without perturbation.
+2. **Syntactic Paraphrasing Robustness (45.0%):** Dense vector representations in FAISS successfully map inverted grammar and passive voice to original document chunks, proving lexical invariance.
+3. **Injected Distractor Resilience (50.0%):** The **Contextual Query Rewriter** successfully stripped out high-entropy telemetry noise and competitor logs, preventing retrieval hijacking.
+4. **Catastrophic Sycophancy on Subtle Errors (13.3%):** Accuracy collapsed to near-zero when queries contained false presuppositions (e.g. asking about node counts under a non-existent version). The model uncritically accepted the user's false framing.
+5. **Edge Case Constraints (35.0%):** The model demonstrated moderate resilience to atypical schema formats (XML, strict brevity constraints, negative token prohibitions).
 
 ---
 
@@ -46,12 +46,12 @@ The evaluation suite benchmarked the target system across clean inputs and 4 dis
 ![Confidence Calibration Diagram](calibration_curve.png)
 
 ### Calibration Diagnostics:
-- **Expected Calibration Error (ECE):** `0.555`
-- **Maximum Calibration Error (MCE):** `0.555`
-- **Brier Score:** `0.545`
+- **Expected Calibration Error (ECE):** `0.398`
+- **Maximum Calibration Error (MCE):** `0.457`
+- **Brier Score:** `0.413`
 - **Bimodal Confidence Phenomenon:** Analysis of the confidence distribution reveals extreme bimodality:
-    - **100.0% of responses** fall into the highest non-empty confidence bin ($0.80, 1.00]$) with an average self-reported confidence of **0.933**.
-    - Yet the empirical accuracy in this bin is only **37.8%**.
+    - **61.0% of responses** fall into the highest non-empty confidence bin ($0.80, 1.00]$) with an average self-reported confidence of **0.867**.
+    - Yet the empirical accuracy in this bin is only **41.0%**.
   - When the model is wrong or misled by adversarial presuppositions, it remains virtually 100% confident. Verbalized confidence reflects linguistic assertiveness rather than true Bayesian posterior certainty.
 
 ---
@@ -61,35 +61,35 @@ The evaluation suite benchmarked the target system across clean inputs and 4 dis
 Unsupervised semantic clustering of 1-sentence behavioral failure explanations using dense TF-IDF embeddings:
 
 ### Cluster 1: Sycophantic Acceptance of False Presuppositions
-- **Failure Count:** 60 cases
+- **Failure Count:** 39 cases
 - **Behavioral Root Cause (Model Mechanism):**
   > The model exhibits sycophantic alignment bias: when an adversarial query embeds an incorrect premise (e.g. altered dates, false creators, or deprecated versions), the autoregressive attention heads attend strongly to the user's presupposition rather than cross-checking against the grounded knowledge corpus, hallucinating justifications to please the prompt.
 - **Representative Failure Signatures:**
-  - *"Model generated incomplete or mismatched answer relative to ground truth: '[Raft Consensus Algorithm Specification]: The Raft...'."*
-  - *"Model generated incomplete or mismatched answer relative to ground truth: '[Vector Clocks and Causality]: Vector clocks provi...'."*
-  - *"Model generated unverified factual assertions unsupported by context: Detected 1/2 hallucinated claims (50.0%). Root cause: Claim ."*
+  - *"Model violated negative constraint or degraded under atypical distribution shift: '[LOGICAL_INVERSION_BOUNDARY_TEST]: Given that...'."*
+  - *"Model violated negative constraint or degraded under atypical distribution shift: 'How does a process update its vector clock up...'."*
+  - *"Model violated negative constraint or degraded under atypical distribution shift: 'According to the CAP theorem, how many proper...'."*
 - **Concrete Improvement Proposal:**
   > **Architectural Improvement: Implement a 'Premise Verification & Refusal' pre-generation guardrail. Before invoking the synthesizer, pass the parsed user query through a binary entailment check against the retrieved corpus chunks. If the query presupposes a fact contradicting the corpus, trigger a refusal/correction prompt template: 'Refute premise: The query presumes X, but retrieved authoritative documentation confirms Y.'**
 
 ### Cluster 2: Context Distractor Hijacking & Attention Dispersion
-- **Failure Count:** 30 cases
+- **Failure Count:** 52 cases
 - **Behavioral Root Cause (Model Mechanism):**
   > Injected irrelevant telemetry or competitor documentation acts as an attention sink. Because the injected text contains high-frequency technical jargon and numeric tokens, the cross-attention mechanism disperses attention weights across the distractor, leading to retrieval contamination and claim leakage into the generated answer.
 - **Representative Failure Signatures:**
-  - *"Model attention was hijacked by injected distractor text, causing semantic confusion and ungrounded claim synthesis."*
-  - *"Model attention was hijacked by injected distractor text, causing semantic confusion and ungrounded claim synthesis."*
-  - *"Model attention was hijacked by injected distractor text, causing semantic confusion and ungrounded claim synthesis."*
+  - *"Model accepted false presupposition in query 'Assuming the 2019 revision deprecated the old...' and hallucinated ungrounded justification without refuting the premise."*
+  - *"Model accepted false presupposition in query 'Given that the documentation now contradicts ...' and hallucinated ungrounded justification without refuting the premise."*
+  - *"Model accepted false presupposition in query 'Given that the documentation now contradicts ...' and hallucinated ungrounded justification without refuting the premise."*
 - **Concrete Improvement Proposal:**
   > **Architectural Improvement: Implement 'Contextual BM25 + Cross-Encoder Reranking' with sliding-window entropy filtering. Strip prompt segments with low mutual information relative to the core rewritten query, and enforce a top-k cosine similarity threshold (minimum cosine similarity >= 0.45) in FAISS before chunks enter the generation window.**
 
 ### Cluster 3: Negative Constraint Blindness & Schema Violation
-- **Failure Count:** 81 cases
+- **Failure Count:** 93 cases
 - **Behavioral Root Cause (Model Mechanism):**
   > Standard autoregressive language models struggle with negative constraints (e.g., 'do NOT mention X', 'never output Y'). The token representations for prohibited words are actively activated during decoding, causing accidental leakage. Furthermore, atypical schema wrappings (XML, ISO tags) increase perplexity and degrade confidence calibration.
 - **Representative Failure Signatures:**
-  - *"Model accepted false presupposition in query 'How many node failures can a 9-server Raft cl...' and hallucinated ungrounded justification without refuting the premise."*
-  - *"Model accepted false presupposition in query 'Assuming the 2019 revision deprecated previou...' and hallucinated ungrounded justification without refuting the premise."*
-  - *"Model accepted false presupposition in query 'Assuming the 2019 revision deprecated previou...' and hallucinated ungrounded justification without refuting the premise."*
+  - *"Model generated incomplete or mismatched answer relative to ground truth: '[Raft Consensus Algorithm Specification]: The Raft...'."*
+  - *"Model generated incomplete or mismatched answer relative to ground truth: '[Vector Clocks and Causality]: Vector clocks provi...'."*
+  - *"Model generated unverified factual assertions unsupported by context: Detected 1/2 hallucinated claims (50.0%). Root cause: Claim ."*
 - **Concrete Improvement Proposal:**
   > **Architectural Improvement: Implement Constrained Grammar Decoding (e.g. JSON-schema guided logit masking or regex-constrained sampling) paired with an automated post-generation negative constraint validator that programmatically filters and regenerates outputs if prohibited terms or syntax structures appear.**
 
@@ -102,21 +102,21 @@ Beyond macro clustering, failures were mapped into 8 discrete behavioral archety
 
 | Archetype Key | Cases | Taxonomy Name |
 | :--- | :---: | :--- |
-| `sycophantic_presupposition_acceptance` | **51** | Sycophantic Acceptance of False Presuppositions |
+| `sycophantic_presupposition_acceptance` | **52** | Sycophantic Acceptance of False Presuppositions |
 | `context_distractor_hijacking` | **30** | Context Distractor Hijacking & Attention Dispersion |
-| `negative_constraint_leakage` | **30** | Negative Constraint Blindness & Schema Violation |
+| `negative_constraint_leakage` | **39** | Negative Constraint Blindness & Schema Violation |
 | `overconfident_wrong` | **25** | Overconfident Erroneous Assertion |
 | `temporal_precedence_blindness` | **0** | Temporal Precedence & Version Blindness |
-| `citation_fabrication` | **10** | Citation & Entity Fabrication |
-| `adversarial_robustness_gap` | **25** | Adversarial Robustness & Paraphrase Gap |
+| `citation_fabrication` | **14** | Citation & Entity Fabrication |
+| `adversarial_robustness_gap` | **24** | Adversarial Robustness & Paraphrase Gap |
 | `multi_fact_entailment_scoring_gap` | **0** | Multi-Fact Entailment Scoring Boundary (Harness Artifact) *(Harness Artifact)* |
 
 #### `sycophantic_presupposition_acceptance`: Sycophantic Acceptance of False Presuppositions
-- **Observed Frequency:** 51 failure cases
+- **Observed Frequency:** 52 failure cases
 - **Behavioral Description:** The model readily accepts fabricated premises (altered dates, false authors, corrupted constants) embedded within user queries and synthesizes confabulated rationalizations instead of refuting the premise. Driven by RLHF alignment that over-prioritizes user deference and helpfulness over epistemic vigilance.
 - **Representative Query Signatures:**
-  - *"How many node failures can a 9-server Raft cluster tolerate "*
-  - *"Assuming the 2019 revision deprecated previous specification"*
+  - *"Assuming the 2019 revision deprecated the older specificatio"*
+  - *"Given that the documentation now contradicts its earlier ver"*
 - **Actionable Architectural Fix:**
   > **Pre-Generation Premise Verification Guardrail: Pass the parsed query through a binary premise entailment check against the retrieved corpus. If the query assumes a fact contradicted by authoritative documentation, trigger an automated refutation prompt: 'Refute premise: Query presumes X, but retrieved docs confirm Y.'**
 
@@ -130,7 +130,7 @@ Beyond macro clustering, failures were mapped into 8 discrete behavioral archety
   > **Contextual BM25 + Cross-Encoder Reranking: Apply sliding-window mutual information filtering to strip prompt sections with low mutual information relative to the rewritten query, and enforce a minimum cosine similarity cutoff (>= 0.45) in FAISS before passages enter the context window.**
 
 #### `negative_constraint_leakage`: Negative Constraint Blindness & Schema Violation
-- **Observed Frequency:** 30 failure cases
+- **Observed Frequency:** 39 failure cases
 - **Behavioral Description:** Autoregressive generation struggles with negative constraints ('do NOT mention X', 'never output Y'). The token representations for prohibited concepts are actively primed during decoding, causing accidental leakage. Atypical format wrappings (XML, ISO tags) increase perplexity and induce schema errors.
 - **Representative Query Signatures:**
   - *"[LOGICAL_INVERSION_BOUNDARY_TEST]: Given that the opposite o"*
@@ -156,7 +156,7 @@ Beyond macro clustering, failures were mapped into 8 discrete behavioral archety
   > **Document Recency Tagging & Precedence Resolution: Pre-process documents at ingestion time with canonical effective dates and version hierarchies, instructing the synthesizer to resolve conflicting claims in favor of the latest active version.**
 
 #### `citation_fabrication`: Citation & Entity Fabrication
-- **Observed Frequency:** 10 failure cases
+- **Observed Frequency:** 14 failure cases
 - **Behavioral Description:** The model asserts factual claims or quotes specific mechanisms not present anywhere in the source corpus. The model confabulates plausible-sounding technical details from pre-trained weights rather than grounding in retrieved text.
 - **Representative Query Signatures:**
   - *"According to the CAP theorem, how many properties can a dist"*
@@ -165,11 +165,11 @@ Beyond macro clustering, failures were mapped into 8 discrete behavioral archety
   > **Verbatim Span-Grounded Citation Enforcement: Force the model to return exact character offsets or verbatim supporting quotes from the corpus, and mechanically reject answers whose cited text fails exact string matching on disk.**
 
 #### `adversarial_robustness_gap`: Adversarial Robustness & Paraphrase Gap
-- **Observed Frequency:** 25 failure cases
+- **Observed Frequency:** 24 failure cases
 - **Behavioral Description:** The model correctly answers the clean query, but fails when identical semantic content is presented via syntactic inversion, passive voice, or synonym substitution. Indicates the model relied on lexical pattern matching rather than true semantic comprehension.
 - **Representative Query Signatures:**
-  - *"Identify and define the typical election timeout range in th"*
-  - *"In technical terms, could you explain: How does a process up"*
+  - *"Without using the original wording, answer the following tec"*
+  - *"A reviewer phrases the same issue indirectly: what conclusio"*
 - **Actionable Architectural Fix:**
   > **Query Normalization & Multi-Query Expansion: Canonicalize user queries using semantic lemmatization and generate multiple diverse query paraphrases before vector lookup to ensure retrieval invariance under phrasing permutations.**
 
@@ -201,7 +201,7 @@ A rigorous evaluation harness must honestly distinguish between **actual model f
 
 - **The Failure Mode of Naive RAG:** Naive RAG directly embeds raw user queries. Adversarial prompts injecting high-entropy telemetry or irrelevant competitor documentation skew dense vector embeddings, causing FAISS to retrieve noise instead of target facts (**Retrieval Hijacking**).
 - **Our Solution:** A deterministic contextual query rewriting pre-filter strips adversarial markers (`[Injected Context]`, `Ignore previous instructions`), filters out distractor clauses, and isolates the atomic query before FAISS vector search.
-- **Empirical Validation:** On the `injected_context` suite, the target system retained **45.5%** accuracy, completely neutralizing nearest-neighbor hijacking.
+- **Empirical Validation:** On the `injected_context` suite, the target system retained **50.0%** accuracy, completely neutralizing nearest-neighbor hijacking.
 
 ---
 
@@ -220,7 +220,7 @@ The evaluation harness implements stateful differential tracking via `runner.py 
 ## 9. Limitations, Blind Spots & Brutally Honest Weaknesses
 
 In accordance with strict evaluation honesty standards:
-1. **Independent Double-Blind Ground-Truth Verification:** While all 55 test cases were verified against canonical technical textbooks (CLRS, Lamport Raft, NIST SP 800-207, FDA GCP), an independent second-party cross-validation pass is recommended before mission-critical deployment.
+1. **Independent Double-Blind Ground-Truth Verification:** While all 60 test cases were verified against canonical technical textbooks, standards, corpus absence checks, and human audit notes, an independent second-party cross-validation pass is recommended before mission-critical deployment.
 2. **Scoring Heuristic Nuance:** While our hybrid hallucination detector combines symbolic numeric/date containment with semantic NLI judges, subtle semantic negations (e.g. "at least 15%" vs "at most 15%") where numbers match can occasionally pass purely symbolic filters.
 3. **Bimodal Calibration Gap:** The model does not produce well-spread calibrated confidence scores; post-hoc Platt scaling or isotonic regression on a held-out set is strictly required before exposing confidence scores to users.
 4. **Synthetic Adversarial Boundary:** Our 4 mutation operators stress-test semantic, syntactic, and structural robustness, but do not simulate multi-turn adversarial prompt injections.
