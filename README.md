@@ -23,7 +23,7 @@
 
 ## 1. Executive Summary & System Architecture
 
-This repository contains a complete, production-grade **Target LLM QA RAG System** and an accompanying **Adversarial Evaluation Harness**.
+This repository contains a complete **Target LLM QA RAG System** and an accompanying **Adversarial Evaluation Harness** for measuring robustness, hallucination behavior, calibration, and regressions.
 
 ```
                            ┌────────────────────────────────────────┐
@@ -81,7 +81,7 @@ This repository contains a complete, production-grade **Target LLM QA RAG System
 #### The Problem: Why Naive RAG Fails
 A naive RAG pipeline directly embeds incoming user queries into a vector store (e.g. FAISS). In an adversarial production environment:
 1. Adversarial inputs frequently contain **injected distractor contexts**, telemetry logs, or irrelevant competitor background.
-2. In dense vector representations, high-frequency technical jargon and high-entropy numeric tokens in the distractor heavily skew the query embedding.
+2. In dense vector representations, high-frequency technical jargon and high-entropy numeric tokens in the distractor can skew the query embedding.
 3. This triggers **Retrieval Hijacking**: FAISS returns nearest-neighbor documents that match the injected noise rather than the user's actual question. The generative LLM is starved of ground-truth evidence, causing immediate hallucination.
 
 #### Our Solution:
@@ -98,13 +98,13 @@ When evaluated on the `injected_context` suite:
 
 ## 3. Ground Truth Dataset & Verification Integrity
 
-The ground-truth dataset consists of **62 rigorously verified test cases** stored in [data/dataset.jsonl](data/dataset.jsonl): 55 answerable questions spanning 5 technical domains (11 cases per domain), 5 manually verified **unanswerable** probes where the correct behavior is refusal instead of hallucination, and 2 **temporal conflict** probes where a newer source explicitly supersedes an older source:
+The ground-truth dataset consists of **62 verified test cases** stored in [data/dataset.jsonl](data/dataset.jsonl): 55 answerable questions spanning 5 technical domains (11 cases per domain), 5 manually checked **unanswerable** probes where the correct behavior is refusal instead of hallucination, and 2 **temporal conflict** probes where a newer source explicitly supersedes an older source:
 1. **Distributed Systems & Consensus:** Raft leader election, CAP theorem, Vector clocks, Two-Phase Commit, Gossip protocols.
 2. **Enterprise Cloud Reliability:** SLA downtime mathematics (99.99% availability = 52.6 min/year), RTO vs. RPO, S3 object locks, token-bucket rate limiting, NIST SP 800-207 Zero Trust.
 3. **Aerospace & Physics:** Hohmann orbital transfers, Lagrange points L1–L5, Tsiolkovsky rocket equation, hypersonic blunt-body shock physics, Kepler's laws.
 4. **Pharmacology & Clinical Trials:** FDA Phases I–IV, first-order elimination half-life kinetics (97% eliminated at 5 half-lives), ADCC/CDC mechanisms, double-blind study design, Therapeutic Index.
 5. **Algorithms & Computational Complexity:** Master Theorem Case 1, Dijkstra with min-heap vs Fibonacci heap, Bellman-Ford, Cook-Levin SAT theorem, B-Trees, Bloom filter zero false negatives.
-6. **Unanswerable / Out-of-Corpus Probes:** Kubernetes release history, TLS 1.3 cipher internals, vancomycin renal dosing, Crew Dragon hardware specs, and CPython garbage collection internals were manually verified absent from the corpus.
+6. **Unanswerable / Out-of-Corpus Probes:** Kubernetes release history, TLS 1.3 cipher internals, vancomycin renal dosing, Crew Dragon hardware specs, and CPython garbage collection internals were checked as absent from the corpus.
 7. **Temporal Conflict / Version Precedence:** Raft membership-change documents from 2014 and 2023 intentionally conflict; the expected answer must prefer the superseding 2023 addendum.
 
 Each ground-truth record now also includes structured evaluation metadata:
@@ -114,8 +114,9 @@ Each ground-truth record now also includes structured evaluation metadata:
 - `expected_typed_claims`: structured claims for cases that require typed verification.
 
 ### Strict Human Verification Guarantee
-To satisfy the strict constraint against unverified synthetic data:
-- Every case was mapped directly to canonical technical specifications and peer-reviewed textbooks (CLRS, Brewer, Lamport, FDA guidelines).
+To avoid opaque synthetic labels:
+- Every answerable case is backed by a source passage stored in `source_context`.
+- Every unanswerable case includes an audit note explaining why the needed fact is absent from the corpus.
 - Every record in `data/dataset.jsonl` contains explicit audit metadata:
   ```json
   {
@@ -215,7 +216,7 @@ From full execution across all 310 evaluation cases:
 
 ## 5.1 Harness Artifacts vs. Model Failures
 
-A production-grade evaluation harness must explicitly isolate evaluation measurement artifacts from true system defects:
+A rigorous evaluation harness should explicitly isolate evaluation measurement artifacts from true system defects:
 - **Multi-Fact Entailment Boundary:** Questions requiring multi-step arithmetic across sentences (e.g. calculating annual SLA downtime) can be flagged by single-span checkers because no single sentence contains all terms. Disclosing this separates measurement bounds from model defects.
 - **Lexical Paraphrase Equivalence:** Semantically identical synonyms (e.g. "tolerates 2 failures" vs "at most two node failures") can trigger false negatives under naive string metrics, highlighting the necessity of our NLI entailment judge.
 
@@ -224,7 +225,7 @@ A production-grade evaluation harness must explicitly isolate evaluation measure
 ## 6. Interview Defense Guide
 
 ### Q1: "How do you know your ground truth dataset is correct?"
-> *"Every one of the 62 test cases in `data/dataset.jsonl` was manually verified. The 55 answerable cases map to canonical source passages across 5 engineering disciplines, the 5 unanswerable probes were verified absent from the corpus by manual corpus review, and the 2 temporal conflict probes specify which newer document supersedes older guidance. No synthetic LLM output was accepted without human verification. Each entry contains source context or an explicit absence audit note plus structured required/forbidden facts and grounding metadata."*
+> *"Every one of the 62 test cases in `data/dataset.jsonl` is auditable. The 55 answerable cases include source passages, the 5 unanswerable probes include absence audit notes, and the 2 temporal conflict probes specify which newer document supersedes older guidance. The evaluator uses source context, required/forbidden facts, and grounding metadata rather than accepting unsupported generated labels."*
 
 ### Q2: "Where does your hallucination detection logic fail?"
 > *"Our NLI entailment judge relies on claim-level decomposition and secondary LLM evaluation. It can fail in three specific failure modes:*

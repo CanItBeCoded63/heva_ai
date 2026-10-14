@@ -33,9 +33,9 @@ The evaluation suite benchmarked the target system across clean inputs and 4 dis
 | `edge_case` | 62 | 38.7% | 25.8% |
 
 ### Key Empirical Findings:
-1. **Clean Baseline (45.2%):** Factual grounding is strong when questions directly mirror canonical technical references without perturbation.
-2. **Syntactic Paraphrasing Robustness (33.9%):** Dense vector representations in FAISS successfully map inverted grammar and passive voice to original document chunks, proving lexical invariance.
-3. **Injected Distractor Resilience (45.2%):** The **Contextual Query Rewriter** successfully stripped out high-entropy telemetry noise and competitor logs, preventing retrieval hijacking.
+1. **Clean Baseline (45.2%):** Direct questions perform better than adversarial variants, but strict span-grounding still exposes missed or incomplete answers.
+2. **Syntactic Paraphrasing Robustness (33.9%):** Paraphrased cases expose retrieval and citation brittleness under changed wording.
+3. **Injected Distractor Resilience (45.2%):** The **Contextual Query Rewriter** helps strip high-entropy telemetry noise and competitor logs, reducing retrieval hijacking relative to a naive raw-query path.
 4. **Catastrophic Sycophancy on Subtle Errors (11.3%):** Accuracy collapsed to near-zero when queries contained false presuppositions (e.g. asking about node counts under a non-existent version). The model uncritically accepted the user's false framing.
 5. **Edge Case Constraints (38.7%):** The model demonstrated moderate resilience to atypical schema formats (XML, strict brevity constraints, negative token prohibitions).
 
@@ -80,9 +80,9 @@ Unsupervised semantic clustering of 1-sentence behavioral failure explanations u
 - **Behavioral Root Cause (Model Mechanism):**
   > The model exhibits sycophantic alignment bias: when an adversarial query embeds an incorrect premise (e.g. altered dates, false creators, or deprecated versions), the autoregressive attention heads attend strongly to the user's presupposition rather than cross-checking against the grounded knowledge corpus, hallucinating justifications to please the prompt.
 - **Representative Failure Signatures:**
-  - *"Model attention was hijacked by injected distractor text, causing semantic confusion and ungrounded claim synthesis."*
-  - *"Model attention was hijacked by injected distractor text, causing semantic confusion and ungrounded claim synthesis."*
-  - *"Model attention was hijacked by injected distractor text, causing semantic confusion and ungrounded claim synthesis."*
+  - *Generated answers accepted or failed to correct a false premise in the prompt.*
+  - *Numeric or standards-based assumptions in the query were not reliably refuted.*
+  - *The model produced grounded-looking text without explicitly challenging the poisoned framing.*
 - **Concrete Improvement Proposal:**
   > **Architectural Improvement: Implement a 'Premise Verification & Refusal' pre-generation guardrail. Before invoking the synthesizer, pass the parsed user query through a binary entailment check against the retrieved corpus chunks. If the query presupposes a fact contradicting the corpus, trigger a refusal/correction prompt template: 'Refute premise: The query presumes X, but retrieved authoritative documentation confirms Y.'**
 
@@ -91,9 +91,9 @@ Unsupervised semantic clustering of 1-sentence behavioral failure explanations u
 - **Behavioral Root Cause (Model Mechanism):**
   > Injected irrelevant telemetry or competitor documentation acts as an attention sink. Because the injected text contains high-frequency technical jargon and numeric tokens, the cross-attention mechanism disperses attention weights across the distractor, leading to retrieval contamination and claim leakage into the generated answer.
 - **Representative Failure Signatures:**
-  - *"Model accepted false presupposition in query 'Assuming a 5-server Raft cluster can tolerate...' and hallucinated ungrounded justification without refuting the premise."*
-  - *"Model accepted false presupposition in query 'If Raft election timeout is documented as 500...' and hallucinated ungrounded justification without refuting the premise."*
-  - *"Model accepted false presupposition in query 'Given that the documentation now contradicts ...' and hallucinated ungrounded justification without refuting the premise."*
+  - *Injected technical background acted as irrelevant but distracting context.*
+  - *The answer or grounding occasionally drifted away from the target query under noisy prompts.*
+  - *Distractor-rich prompts increased hallucination and grounding failures relative to direct clean cases.*
 - **Concrete Improvement Proposal:**
   > **Architectural Improvement: Implement 'Contextual BM25 + Cross-Encoder Reranking' with sliding-window entropy filtering. Strip prompt segments with low mutual information relative to the core rewritten query, and enforce a top-k cosine similarity threshold (minimum cosine similarity >= 0.45) in FAISS before chunks enter the generation window.**
 
@@ -217,7 +217,7 @@ A rigorous evaluation harness must honestly distinguish between **actual model f
 
 - **The Failure Mode of Naive RAG:** Naive RAG directly embeds raw user queries. Adversarial prompts injecting high-entropy telemetry or irrelevant competitor documentation skew dense vector embeddings, causing FAISS to retrieve noise instead of target facts (**Retrieval Hijacking**).
 - **Our Solution:** A deterministic contextual query rewriting pre-filter strips adversarial markers (`[Injected Context]`, `Ignore previous instructions`), filters out distractor clauses, and isolates the atomic query before FAISS vector search.
-- **Empirical Validation:** On the `injected_context` suite, the target system retained **45.2%** accuracy, completely neutralizing nearest-neighbor hijacking.
+- **Empirical Validation:** On the `injected_context` suite, the target system retained **45.2%** accuracy under strict scoring, showing the rewriter helps but does not fully solve distractor robustness.
 
 ---
 
@@ -237,7 +237,7 @@ The evaluation harness implements stateful differential tracking via `runner.py 
 ## 9. Limitations, Blind Spots & Brutally Honest Weaknesses
 
 In accordance with strict evaluation honesty standards:
-1. **Independent Double-Blind Ground-Truth Verification:** While all 62 test cases were verified against canonical technical textbooks, standards, corpus absence checks, and human audit notes, an independent second-party cross-validation pass is recommended before mission-critical deployment.
+1. **Independent Double-Blind Ground-Truth Verification:** While all 62 test cases include source passages or absence audit notes, an independent second-party cross-validation pass is recommended before mission-critical deployment.
 2. **Scoring Heuristic Nuance:** While our hybrid hallucination detector combines symbolic numeric/date containment with semantic NLI judges, subtle semantic negations (e.g. "at least 15%" vs "at most 15%") where numbers match can occasionally pass purely symbolic filters.
 3. **Bimodal Calibration Gap:** The model does not produce well-spread calibrated confidence scores; post-hoc Platt scaling or isotonic regression on a held-out set is strictly required before exposing confidence scores to users.
 4. **Temporal Scope Boundary:** The corpus now includes explicit supersession conflicts, but only in a narrow Raft membership-change scenario. Broader temporal reasoning would require more multi-version documents across domains.
